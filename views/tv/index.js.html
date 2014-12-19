@@ -1,0 +1,38 @@
+ @!(model)
+<ul id="leftPane" class="col-sm-2 nav nav-tabs nav-stacked">
+    <li><a href="#media/anime">Animes</a></li>
+    <li><a href="#media/movie">Films</a></li>
+    <li><a href="#media/music">Musique</a></li>
+    <li><a href="#media/photo">Photos</a></li>
+    <li><a href="#media/serie">Séries TV</a></li>
+    <li class="active"><a href="#media/tv">TV</a></li>
+    <li><select id="player"></select></li>
+</ul>
+<div id="mainPane" class="col-sm-10">
+    <table id="channels" class="table table-striped">
+        <thead>
+            <tr>
+                <th>Chaines</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+        </tbody>
+    </table>
+</div> 
+
+<script src="/assets/core/js/jquery.dataTables.js"></script>
+<script src="/assets/core/js/dataTables.bootstrap.js"></script>
+<script src="/assets/core/js/dataTables.scroller.min.js"></script>
+<script src="/assets/media/js/player.js"></script>
+
+<script>
+    $.getJSON('/api/media/tv/channels', function(channels)
+    {
+        $.each(channels, function(index, channel){
+            var line=$('<tr></tr>');
+            line.append($('<td>').text(channel.name));
+            $('#channels').append(line);
+        })
+    });
+</script>

@@ -1,0 +1,298 @@
+<style>
+    .progress
+    {
+        height:20px;
+        background-image:none;
+        background-color:transparent;
+        line-height:20px;
+    }
+    
+    .progress-bar
+    {
+        background-image:none;
+        background-color:rgba(255,255,255,0.2) !important;
+        font-weight:bold;
+        transition-duration:1s;
+        transition-timing-function:linear;
+        text-align:right;
+        padding-right:5px;
+        color:black;
+    }
+    
+    .progress .time-left
+    {
+        font-size:smaller;
+        font-weight:bold;
+    }
+    
+    .player
+    {
+        height:100%;
+        overflow:hidden;
+    }
+    img#art
+    {
+        display:none;
+    }
+    .playlist
+    {
+        height:calc(100% - 100px);
+        overflow:auto;
+        font-size:larger;
+        font-weight:bold;
+    }
+
+    #controller
+    {
+        position:fixed;
+        width:100%;
+        height:100px;
+        bottom:0;
+        z-index:2;
+    }
+    #controls
+    {
+        margin:0 auto;
+    }
+    canvas.artwork
+    {
+        image-rendering: optimizeQuality;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: optimize-contrast;
+        -ms-interpolation-mode: nearest-neighbor;
+        padding:0;
+        margin-bottom:150px;
+    }
+    
+    .background-art
+    {
+        position:fixed;
+        -webkit-filter: blur(40px);
+        -webkit-transform: translate3d(0, 0, 0);
+        -ms-filter: blur(40px);
+        -ms-transform: translate3d(0, 0, 0);
+        filter: blur(40px);
+        transform: translate3d(0, 0, 0);
+        background-position:center center;
+        background-repeat:no-repeat;
+        background-size:cover;
+        width:100%;
+        height:100%;
+    }
+    
+    .playlist
+    {
+        padding:0px;
+    }
+    
+    #controls .btn
+    {
+        border-radius:0px;
+        border-width:0px;
+        font-weight:bold;
+    }
+    
+    #controls .btn.art
+    {
+        background-image:none;
+        text-shadow:none;
+    }
+    
+    
+</style>
+<style id="colorTunesCss">
+    
+</style>
+<div class="background-art row">
+</div>
+<div class="player row">
+    <img id="art" class="art col-md-4" />
+    <canvas class="col-md-4 hidden-sm hidden-xs artwork artwork-feathering artwork-mirror"></canvas>
+    <div class="col-md-8 playlist transparent art-primary">
+        <table id="playlist" class="table"></table>
+    </div>
+</div>
+<div id="controller" class="row col-md-12 transparent art-primary">
+    <div class="progress">
+        <div class="progress-bar text-art-tertiary" role="progressbar" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: 0;">
+        </div>
+        <div class="time-left text-art-tertiary"></div>
+    </div>
+    <div id="controls">
+        <a id="fullscreen" class="btn btn-default art" title="fullscreen" onclick="commands.fullscreen()"><span class="fa fa-expand"></span></a>
+        <a id="prev" class="btn btn-default art" title="prev" onclick="commands.prev()"><span class="fa fa-fast-backward"></span></a>
+        <a id="pause" class="btn btn-default art" title="pause" onclick="commands.pause()"><span class="fa fa-pause"></span></a>
+        <a id="play" class="btn btn-default art" title="play" onclick="commands.play()"><span class="fa fa-play"></span></a>
+        <a id="stop" class="btn btn-default art" title="stop" onclick="commands.stop()"><span class="fa fa-stop"></span></a>
+        <a id="next" class="btn btn-default art" title="next" onclick="commands.next()"><span class="fa fa-fast-forward"></span></a>
+        <div id="player" class="btn-group dropup">
+            <button type="button" class="btn btn-default art dropdown-toggle" data-toggle="dropdown">
+                <span class="btn-label"></span> <span class="caret"></span>
+            </button>
+            <ul class="dropdown-menu" role="menu">
+            </ul>
+        </div>
+        <a id="random" class="btn btn-default art" title="random" onclick="commands.random('music')"><span class="fa fa-random"></span></a>
+        <a id="art" class="btn btn-default art" title="art" onclick="command('art')()">art</a>
+        <a id="shutdown" class="btn btn-danger" title="shutdown" onclick="commands.shutdown()"><span class="fa fa-power-off"></span></a>
+    </div>
+</div> 
+<div id="console" class="row hidden" style="max-width:100%"></div>
+<script src="/assets/media/js/player.js"></script>
+<script src="/assets/media/js/quantize.js"></script>
+<script src="/assets/media/js/color-tunes.js"></script>
+<script>
+    
+    $(document).bindKey('Ctrl+left', function(){
+        commands.seek('-60');
+    }).bindKey('Ctrl+right', function(){
+        commands.seek('+60');
+    }).bindKey('left', function(){
+        commands.seek('-10');
+    }).bindKey('right', function(){
+        commands.seek('+10');
+    }).bindKey('Space', function(){
+        commands.pause();
+    }).bindKey('up', function(){
+        commands.volume('+5');
+    }).bindKey('down', function(){
+        commands.volume('-5');
+    }).bindKey('Ctrl+F', function(){
+        commands.fullscreen();
+        return false;
+    })
+    
+    //commands and updates
+    
+    function padLeft(str, cnt, char)
+    {
+        str=str.toString();
+        for(var i=0;i<cnt-str.length;i++)
+        {
+            str=char+str;
+        }
+        return str;
+    }
+    
+    socket.on('player.status', function(status){
+        $('#console').text(JSON.stringify(status, undefined, 2));
+        $('#fullscreen .fa').removeClass('fa-compress fa-expand');
+        if(status.fullscreen)
+            $('#fullscreen .fa').addClass('fa-compress');
+        else
+            $('#fullscreen .fa').addClass('fa-expand');
+            
+        switch(status.state)
+        {
+            case 'playing':
+                $('#pause, #stop').show();
+                $('#play').hide();
+                break;
+            case 'paused':
+                $('#pause, #stop').show();
+                $('#play').hide();
+                break;
+            default:
+                $('#pause, #stop').hide();
+                $('#play').show();
+                break;
+        }
+        var progressText=padLeft(status.time%60, 2, '0');
+        
+        progressText=padLeft(Math.floor(status.time/60)%60)+':'+progressText;
+        if(Math.floor(status.time/3600))
+            progressText=Math.floor(status.time/3600)+':'+progressText;
+
+
+
+        $('.progress-bar').css('width', status.position*100+'%', 1000).text(progressText);
+
+        var timeLeft=status.length-status.time;
+
+        var progressText=padLeft(timeLeft%60, 2, '0');
+
+        progressText=padLeft(Math.floor(timeLeft/60)%60)+':'+progressText;
+        if(Math.floor(timeLeft/3600))
+            progressText=Math.floor(timeLeft/3600)+':'+progressText;
+
+        $('.progress .time-left').text(' -'+progressText);
+    });
+    
+    var knownNext={};
+    
+    socket.on('player.playlist', function(playlist){
+//        if($('#playlist').children().length>0)
+//            return;
+        $('#playlist').empty();
+        $.each(playlist, function(index, playItem){
+            
+            var item=$('<tr>');
+            var trueItem=$('<td>').text(playItem.displayName).appendTo(item);
+            $('<a class="btn text-danger pull-right"><span class="fa fa-remove"></span></a>').click(function(){
+                commands.remove(item.index());
+            }).appendTo(trueItem);
+            if(typeof(knownNext[playItem.id])=='undefined')
+            $.ajax({url:'/api/media/library/hasNext/'+playItem.id, success:function(nextId)
+            {
+                knownNext[playItem.id]=nextId;
+                $('<a class="btn btn-default">&rarr;</a>').click(function(){
+                    commands.play(nextId);
+                }).appendTo(trueItem);
+            }, error:function(xhr){
+                if(xhr.status!=404)
+                    debugger;
+                knownNext[playItem.id]=null
+            }});
+            else if(knownNext[playItem.id])
+            {
+                $('<a class="btn btn-default">&rarr;</a>').click(function(){
+                    commands.play(knownNext[playItem.id]);
+                }).appendTo(trueItem);
+
+            }
+            
+            item.on('dblclick', function(){
+                commands.play(item.index());
+            });
+            if(playItem.active)
+                item.addClass('active');
+            else
+                item.addClass('hidden-xs');
+            $('#playlist').append(item);
+            
+        });
+    });
+
+    socket.on('player.art', function(img){
+        if(typeof(img)!=='string')
+        {
+            var blob = new Blob([img], {type: 'image/jpeg'}); // pass a useful mime type here
+            img=URL.createObjectURL(blob);
+        }
+        debugger;
+        $('img.art').prop('src',img);
+        $('.background-art').css('background-image', 'url("'+img+'")');
+        $('#art').on('load', function(){
+            $('#art').css('max-height', this.clientHeight);
+            $('#art').css('max-width', this.clientWidth);
+    		ColorTunes.launch(this,$('canvas.artwork')[0], function(primary, secondary, tertiary){
+    		    var primaryWithAlpha=ColorTunes.rgbaToCssString(.5, primary);
+    		    
+    			$('#colorTunesCss').text('\
+    			    .art, .transparent.art-primary tbody > tr.active > td { background-color: '+ColorTunes.rgbToCssString(primary)+'!important; color:'+ColorTunes.rgbToCssString(tertiary)+'!important; }\
+    			    .text-art-primary { color: '+ColorTunes.rgbToCssString(primary)+'!important }\
+    			    .text-art-secondary { color: '+ColorTunes.rgbToCssString(secondary)+'!important }\
+    			    .text-art-tertiary { color: '+ColorTunes.rgbToCssString(tertiary)+'!important }\
+    			    .art-primary { background-color: '+ColorTunes.rgbToCssString(primary)+'!important }\
+    			    .art-secondary { background-color: '+ColorTunes.rgbToCssString(secondary)+'!important }\
+    			    .art-tertiary { background-color: '+ColorTunes.rgbToCssString(tertiary)+'!important }\
+    			    .transparent.art-primary { background-color: '+ColorTunes.rgbaToCssString(.5, primary)+'!important }\
+    			    .transparent.art-secondary { background-color: '+ColorTunes.rgbaToCssString(.5, secondary)+'!important }\
+    			    .transparent.art-tertiary { background-color: '+ColorTunes.rgbaToCssString(.5, tertiary)+'!important }\
+    			    .btn.art{ background-color:'+ColorTunes.rgbToCssString(tertiary)+'; color:'+ColorTunes.rgbToCssString(secondary)+'!important}');
+    		});
+        });
+    });
+
+    </script>
