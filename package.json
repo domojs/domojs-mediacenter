@@ -1,0 +1,13 @@
+{
+	"name":"domojs-mediacenter",
+	"version":"0.1",
+	"repository":{
+		"type":"git",
+		"url":"https://github.com/npenin/domojs-mediacenter.git"
+	},
+	"dependencies":
+	{
+		"MD5":"latest",
+		"musicmetadata":"latest"
+	}
+}
