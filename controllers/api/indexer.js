@@ -1,6 +1,8 @@
-var debug=console.log;
+var debug=function(){};
 var id3=require('musicmetadata');
 var md5=require('md5');
+
+folderMapping=false;
 
 var processing=false;
 var wasProcessing=false;
@@ -19,7 +21,7 @@ var interval=setInterval(function(){
 
 function processFolder(folder, extension, lastIndex, callback)
 {
-    $('graceful-fs').readdir(folder, function(err, files){
+    $('fs').readdir(translatePath(folder), function(err, files){
         var result=[];
         if(err)
         {
@@ -31,7 +33,7 @@ function processFolder(folder, extension, lastIndex, callback)
             if(file=='$RECYCLE.BIN')
                 return next();
             file=folder+'/'+file;
-            $('graceful-fs').stat(file, function(err, stat){
+            $('fs').stat(translatePath(file), function(err, stat){
                 if(err)
                 {
                     debug(err);
@@ -144,14 +146,43 @@ function pad(n, width, z) {
   return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
 }
 
+function translatePath(path){
+    if(path.startsWith('//') && process.platform!='win32')
+    {
+        path=path.substring(2).replace(/\//g, $('path').sep);
+        var indexOfSlash=path.indexOf($('path').sep);
+        path=path.substring(0,indexOfSlash)+':'+path.substring(indexOfSlash);
+        if(!folderMapping)
+        {
+            folderMapping={};
+            var fstab=$('fs').readFileSync('/etc/fstab', 'ascii');
+            var declarations=fstab.split(/\n/g);
+            $.each(declarations, function(index, line){
+                var declaration=line.split(/[ \t]/g);
+                if(typeof(line)!='undefined' && declaration.length>1)
+                {
+                    folderMapping[declaration[0]]=declaration[1]
+                }
+            });
+            console.log(folderMapping);
+        }
+        $.each(folderMapping, function(remotePath, localPath){
+            if(path.startsWith(remotePath))
+                path=path.replace(remotePath, localPath);
+        });
+    }
+    return path;
+}
+
 function musicScrapper(mediaType, media, callback)
 {
     try{
-        var file=$('fs').createReadStream(media.path);
+        var path=translatePath(media.path);
+        var file=$('fs').createReadStream(path);
         file.on('error', function(err){
             console.log(err);
-            $.db.sadd('media:'+mediaType+':failedToIndex', media.path, function(){
-                console.log('added '+media.path+' to failed to index list');
+            $.db.sadd('media:'+mediaType+':failedToIndex', path, function(){
+                console.log('added '+path+' to failed to index list');
                 callback();
             });
         });
@@ -165,6 +196,8 @@ function musicScrapper(mediaType, media, callback)
             media.albumTracks=tags.track.of;
             media.diskNo=tags.disk.no;
             media.disks=tags.disk.of;
+            media.size=$('fs').statSync(path).size;
+            media.length=tags.duration;
             if(tags.artist && tags.artist[0])
                 media.displayName=media.name+' - '+media.artist;
             else
@@ -208,7 +241,6 @@ function musicScrapper(mediaType, media, callback)
 
 function indexer(mediaType, scrapper, callback)
 {
-    var results=[];
     $.db.spop('media:'+mediaType+':toIndex', function(err, path)
     {
         if(err)
@@ -218,12 +250,11 @@ function indexer(mediaType, scrapper, callback)
         var item={name:fileNameCleaner(path), path:path};
         scrapper(mediaType, item, function(result){
             if(result){
-                results.push(result.args);
                 var args=[result.id];
                 result.args.path='file:///'+result.args.path;
-                $.each(result.args, function(index, value){
-                    args.push(index);
-                    args.push(value);
+                $.each(Object.keys(result.args), function(index, key){
+                    args.push(key);
+                    args.push(result.args[key]);
                 });
                 args.push('added');
                 args.push(new Date().toISOString());
@@ -270,7 +301,7 @@ var scrappers={video:videoScrapper, music:musicScrapper};
 module.exports={
     get:function(id, callback)
     {
-        var indexers=500;
+        var indexers=10;
         var sources=$.settings('source:'+id) || [];
         var result=[];
         processing='processing folders';
@@ -283,7 +314,6 @@ module.exports={
                     lastIndex=new Date(lastIndex);
                     $.eachAsync(sources, function(index,source,next)
                     {
-                        console.log(source);
                         processFolder(source, extension, lastIndex, function(media){
                             result=result.concat(media);
                             next();
@@ -317,11 +347,11 @@ module.exports={
                     indexer(id, scrappers[id], callback);
                 }
             }
-        })
+        });
     },
     check:function(id, callback)
     {
-        var indexers=500;
+        var indexers=10;
         var sources=$.settings('source:'+id) || [];
         var result=[];
         processing='processing folders';
@@ -334,7 +364,7 @@ module.exports={
                     var result=[];
                     $.eachAsync(paths, function(index,path,next)
                     {
-                        $('fs').exists(path.substring('file:///'.length), function(exists)
+                        $('fs').exists(translatePath(path.substring('file:///'.length)), function(exists)
                         {
                             if(!exists)
                                 result.push(path);
@@ -369,6 +399,19 @@ module.exports={
                     indexer(id, scrappers[id], callback);
                 }
             }
-        })
+        });
+    },
+    reset:function(id, callback){
+        $.db.keys('media:'+id+':*', function(err, keys){
+            $.db.keys('tokens:'+id+':*', function(err, tokens){
+                keys=keys.concat(tokens);
+                console.log('removing '+keys.length+' keys');
+                $.db.del(keys, function(err)
+                {
+                    console.log(err);
+                    callback(err || 'ok');
+                });
+            })
+        });
     }
 };

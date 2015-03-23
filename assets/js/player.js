@@ -7,6 +7,7 @@ function switchPlayer(newPlayer)
     player=newPlayer.id;
     $('#player .btn-label').text(newPlayer.name);
     socket.emit('join', 'player-'+player);
+    commands.playlist();
 }
 
 socket.on('iamaplayer', function(identity){
@@ -66,5 +67,5 @@ var commands={
 	fullscreen:command('fullscreen'),
 	shutdown:command('shutdown'),
 	random:command('random'),
+	playlist: command('playlist'),
 };
- 

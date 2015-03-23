@@ -22,6 +22,7 @@ exports.init=function(config, app)
         var playlistId='media:playlist:'+identity.id;
         var mrl;
         var markedAsRead=false;
+        var device=false;
         //player discovery
         socket.on('whoisaplayer', function(message, callback)
         {
@@ -37,12 +38,59 @@ exports.init=function(config, app)
                 $.io.to(message.replyTo).emit('iamaplayer', identity);
             }
             else
+            {
+                var cmd=function(cmd, args)
+                {
+                    return function(value, callback){
+                        if(value)
+                            if(typeof(args)!='undefined')
+                                args.push(value);
+                            else
+                                args=[value];
+                        socket.emit('player.command', {name:cmd, args:args || []});
+                        if(callback)
+                            callback(200);
+                    }
+                }
                 $.io.sockets.emit('iamaplayer', identity);
+                
+                $.device(device={name:identity.name, type:'player', commands:{
+                    pause:cmd('pause'),
+                    stop:cmd('stop'),
+                    next:cmd('next'),
+                    previous:cmd('previous'),
+                    fullscreen:cmd('fullscreen'),
+                    off:cmd('shutdown'),
+                }, subdevices:[
+                    {
+                        name:"volume",
+                        type:'analogic',
+                        category:'actuator',
+                        /*status:function(callback)
+                        {
+                            var status={};
+                            send('?V', device.name, function(error, result){
+                                callback({state:/[0-9]+/.exec(result)*100/185});
+                            });
+                        },*/
+                        commands:
+                        {
+                            'up':cmd('volume', ['+5']),
+                            'down':cmd('volume', ['-5']),
+                            'set':cmd('volume')
+                        },
+                    },
+                ]});
+            }
         });
         
         socket.on('disconnect', function(){
             console.log('notifying death of '+identity.id);
             $.io.sockets.emit('iamnotaplayer', identity);
+            if(device)
+            {
+                device.remove();
+            }
             $.db.del(playlistId, playlistId+':ids', function(err)
             {
                 if(err)
@@ -125,13 +173,16 @@ exports.init=function(config, app)
                         console.log(err);
                         return;
                     }
-                    $.db.hincrby(id, 'readcount', 1, function(err){
-                       if(err)
-                       {
-                           markedAsRead=false;
-                           console.log(err);
-                       }
-                    })
+                    $.db.multi().
+                        hset(id, 'lastread', new Date().toISOString()).
+                        hincrby(id, 'readcount', 1).
+                        exec(function(err){
+                           if(err)
+                           {
+                               markedAsRead=false;
+                               console.log(err);
+                           }
+                        })
                 });
             }
             $.io.to('player-'+identity.id).emit('player.status', message);

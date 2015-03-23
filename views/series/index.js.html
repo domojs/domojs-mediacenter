@@ -47,7 +47,7 @@
             { title:"Nom", data: "name" },
             { title:"Episode", data: "episode", createdCell:function(cell, cellData, rowData){
                 if(rowData.readcount)
-                    $(cell).addClass('read-'+rowData.readcount);
+                    $(cell).addClass('read read-'+rowData.readcount);
             } },
             { title:"Saison", data: "season" },
 			{ title:"Commandes", data:"id", createdCell:function(cell,cellData,rowData, rowIndex,colIndex){

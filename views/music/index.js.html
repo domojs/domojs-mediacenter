@@ -33,7 +33,7 @@
     
     $('#mainPane .table').dataTable({ajax:function(data, callback, settings){
         debugger;
-        $.ajax({url:'/api/media/library/music', type:'get', dataType:'json', data:{viewName:'ByName', 'search[value]':(data.search.value && ' '+data.search.value || ''), length: data.length, start:data.start}, success:function(data){
+        $.ajax({url:'/api/media/library/music', type:'get', dataType:'json', data:{viewName:'ByName', 'search[value]':(data.search.value || ''), length: data.length, start:data.start}, success:function(data){
             callback(data);
         }});
     }, serverSide:true, processing:false, searching:true, lengthChange:false, scrollY: '750px', dom:'frtiS', columns: [

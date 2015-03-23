@@ -17,6 +17,16 @@
     <table class="table table-striped table-hover"></table>
 </div> 
 
+
+<style>
+    .read
+    {
+        background-color:rgba(0,150,0,0.5) !important;
+        color:white;
+    }
+    
+</style>
+
 <script src="/assets/core/js/jquery.dataTables.js"></script>
 <script src="/assets/core/js/dataTables.bootstrap.js"></script>
 <script src="/assets/core/js/dataTables.scroller.min.js"></script>
@@ -31,7 +41,10 @@
         }});
     }, serverSide:true, processing:false, searching:true, lengthChange:false, scrollY: '750px', dom:'frtiS', columns: [
             { title:"Nom", data: "name" },
-            { title:"Episode", data: "episode" },
+            { title:"Episode", data: "episode", createdCell:function(cell, cellData, rowData){
+                if(rowData.readcount)
+                    $(cell).addClass('read read-'+rowData.readcount);
+            } },
             { title:"Saison", data: "season" },
 			{ title:"Commandes", data:"id", createdCell:function(cell,cellData,rowData, rowIndex,colIndex){
 				$(cell).empty()
