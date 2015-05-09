@@ -1,4 +1,4 @@
-var debug=function(){};
+var debug=function(){ console.log.apply(console, arguments) };
 var id3=require('musicmetadata');
 var md5=require('md5');
 
@@ -61,6 +61,9 @@ function fileNameCleaner(fileName, extension)
 {
     while(fileName.startsWith('/'))
         fileName=fileName.substr(1);
+    var encodedUriMatches=fileName.match(/%[0-9a-f]{2}/gi);
+    if(encodedUriMatches && encodedUriMatches.length>1)
+        fileName=decodeURIComponent(fileName);
     // keep only files
     fileName=fileName.replace(/^([^\/]+\/)+([^\/]+)$/g, '$2');
     //trimming extension
@@ -68,7 +71,7 @@ function fileNameCleaner(fileName, extension)
     //trimming endTags
     fileName=fileName.replace(/(\[[A-F0-9]+\])*$/i, '');
     //trimming codecs and format
-    fileName=fileName.replace(/(^(\[[^\]]+\]_?)(\[[^\]]{2,7}\])?)|((1080|720)[pi])|[0-9]{3,4}x[0-9]{3,4}|([XH]\.?)264|xvid|ogg|mp3|ac3|\+?aac|rv(9|10)e?([_-]EHQ)?|vost(f(r)?)?|real|(sub)?(st)?fr(ench)?|dvd(rip(p)?(ed)?)?|bluray|web-dl|V?[HLS][QD]|fin(al)?|TV|B[RD](rip(p)?(ed)?)?|v[1-9]|oav/gi, '');
+    fileName=fileName.replace(/(^(\[[^\]]+\]_?)(\[[^\]]{2,7}\])?)|((1080|720)[pi])|[0-9]{3,4}x[0-9]{3,4}|([XH]\.?)264|xvid|ogg|mp3|ac3|\+?aac|rv(9|10)e?([_-]EHQ)?|vost(f(r)?)?|real|(?:true)(?:sub)?(?:st)?fr(?:ench)?|5\.1|dvd(rip(p)?(ed)?)?|bluray|directors\.cut|web-dl|V?[HLS][QD]|fin(al)?|TV|B(?:R)?(?:D)?(rip(p)?(ed)?)?|v[1-9]|oav/gi, '');
     //checksum
     fileName=fileName.replace(/(\[[A-F0-9]+\]|\(_CRC[A-F0-9]+\))$/i, '');
     //other checksum format
@@ -80,7 +83,9 @@ function fileNameCleaner(fileName, extension)
     //trimming end tags
     fileName=fileName.replace(/\[[^\]]+\]\.?$/, '');
     //removing empty tags
-    fileName=fileName.replace(/\[[\.+]?\]/g, '');
+    fileName=fileName.replace(/\[[\.+-]?\]/g, '');
+    //removing empty tags with braces
+    fileName=fileName.replace(/\{[\.+-]?\}/g, '');
     //removing dates
     fileName=fileName.replace(/\[[0-9]{2}\.[0-9]{2}\.[0-9]{4}\]/, '');
     fileName=fileName.replace(/[0-9]{4}/, '');
@@ -91,18 +96,21 @@ function fileNameCleaner(fileName, extension)
     return fileName;
 }
 
-function videoScrapper(mediaType, media, callback)
+function videoScrapper(mediaType, media, callback, errorCallback)
 {
-    var episodeNumber = /(?:E(?:p(?:isode)?)?|Part)([0-9]+)/i;
+    var episodeNumber = /(?:E(?:p(?:isode)?)?|Part)\.?([0-9]+)/i;
     var seasonNumber = /(?:S(?:aison)?)([0-9]+)/i;
     var name = /(([A-Z!][A-Z!0-9]*|[A-Z!0-9]*[A-Z!])+(\.|$))+/i;
     var season = seasonNumber.exec(media.name);
     var episode = episodeNumber.exec(media.name);
+    var itemName=media.name.replace(extensions[mediaType], '');
     if(!episode || !episode[1])
     {
         if(!season)
         {
-            episode=/([0-9]+)x([0-9]+)/.exec(media.name);
+            console.log(media.name);
+            episode=/([0-9]+)(?:x|\.)([0-9]+)/.exec(media.name);
+            console.log(episode);
             if(episode && episode[2])
             {
                 season=episode;
@@ -113,12 +121,19 @@ function videoScrapper(mediaType, media, callback)
         }
         else
             episode=/(?:[^0-9]|^)([0-9]{1,3})(?:[^0-9]|$)/.exec(media.name);
-        
+    }
+    if(episode && episode[0])
+    {
+        media.name=media.name.substring(0,episode.index)+media.name.substring(episode.index+episode[0].length);
+    }
+    if(season && season[0])
+    {
+        media.name=media.name.substring(0,season.index)+media.name.substring(season.index+season[0].length);
     }
     var maxLength=Math.min(season && season.index || media.name.length,episode && episode.index || media.name.length);
         if(episode!==null && episode && episode[1])
             episode=episode[1];
-    var itemName=name.exec(media.name);
+    itemName=name.exec(media.name);
     if(itemName.index+itemName[0].length>maxLength)
         itemName=itemName[0].substr(0,maxLength);
     else
@@ -174,19 +189,17 @@ function translatePath(path){
     return path;
 }
 
-function musicScrapper(mediaType, media, callback)
+function musicScrapper(mediaType, media, callback, errorCallback)
 {
     try{
         var path=translatePath(media.path);
         var file=$('fs').createReadStream(path);
-        file.on('error', function(err){
-            console.log(err);
-            $.db.sadd('media:'+mediaType+':failedToIndex', path, function(){
-                console.log('added '+path+' to failed to index list');
-                callback();
-            });
-        });
-        id3(file).on('metadata', function(tags){
+        id3(file, function(error, tags){
+            if(error)
+            {
+                errorCallback(error);
+                return;
+            }
             media.mediaType=mediaType;
             media.name=tags.title;
             media.artist=tags.artist && tags.artist[0] || 'Artiste inconnu';
@@ -220,11 +233,7 @@ function musicScrapper(mediaType, media, callback)
         }).on('done', function (err) {
             if (err) 
             {
-                console.log(err);
-                $.db.sadd('media:'+mediaType+':failedToIndex', media.path, function(){
-                    console.log('added '+media.path+' to failed to index list');
-                    callback();
-                });
+                errorCallback(err);
                 file.destroy();
             }
         });
@@ -239,6 +248,14 @@ function musicScrapper(mediaType, media, callback)
     }
 }
 
+function errorCallback(err){
+            console.log(err);
+            $.db.sadd('media:'+mediaType+':failedToIndex', path, function(){
+                console.log('added '+path+' to failed to index list');
+                callback();
+            });
+        }
+
 function indexer(mediaType, scrapper, callback)
 {
     $.db.spop('media:'+mediaType+':toIndex', function(err, path)
@@ -247,7 +264,7 @@ function indexer(mediaType, scrapper, callback)
             console.log(err);
         if(!path)
             return processing=false;
-        var item={name:fileNameCleaner(path), path:path};
+        var item={name:fileNameCleaner(path, extensions[mediaType]), path:path};
         scrapper(mediaType, item, function(result){
             if(result){
                 var args=[result.id];
@@ -275,14 +292,14 @@ function indexer(mediaType, scrapper, callback)
                     if(err)
                         console.log(err);
                     process.nextTick(function(){
-                        indexer(mediaType, scrapper, callback);
+                        indexer(mediaType, scrapper, callback, errorCallback);
                     });
                 });
                 debug(result.id);
             }
             else
                 process.nextTick(function(){
-                    indexer(mediaType, scrapper, callback);
+                    indexer(mediaType, scrapper, callback, errorCallback);
                 });
 
         });
@@ -295,10 +312,344 @@ function indexer(mediaType, scrapper, callback)
     callback(200);
 }
 
-var extensions={video:/\.(avi|mkv|flv|mp4|mpg)$/i, music: /\.(mp3|fla|flac|m4a)$/i};
+var extensions={video:/\.(avi|mkv|flv|mp4|mpg|ts)$/i, music: /\.(mp3|fla|flac|m4a)$/i};
 var scrappers={video:videoScrapper, music:musicScrapper};
 
+var tvdbMirrors=false;
+var tvdbCache={};
+function tvdbScrapper(mediaType, media, callback, errorCallback){
+    if(!tvdbMirrors)
+    {
+        $.ajax({
+            type:'get',
+            url:'http://thetvdb.com/api/833A54EE450AAD6F/mirrors.xml',
+            dataType:'xml',
+            success:function(data){
+                tvdbMirrors=data.Mirrors.Mirror;
+                tvdbScrapper(mediaType, media, callback, errorCallback);
+            },
+            error:function(err)
+            {
+                console.log(err);
+            }
+        });
+        return;
+    }
+    var mirror=tvdbMirrors[Math.floor(Math.random()*tvdbMirrors.length)].mirrorpath[0];
+    var buildPath=function(Series, confidence)
+    {
+        if(Series.Overview)
+            media.overview=Series.Overview[0];
+        media.tvdbid=Series.seriesid[0];
+        var newName=media.displayName;
+        newName+=$('path').extname(media.path);
+        $.ajax({
+            url:mirror+'/api/833A54EE450AAD6F/series/'+media.tvdbid+'/fr.xml',
+            dataType:'xml',
+            success:function(data){
+                data=data.Data.Series;
+                Series=data[0];
+                console.log(confidence);
+                console.log(Series.Genre);
+                if(Series.Genre[0].indexOf('|Animation|')>-1)
+                    if(confidence>0.5)
+                    {
+                        callback('Animes/'+Series.SeriesName[0]+'/'+newName);
+                    }
+                    else
+                        callback('Animes/'+(media.originalName || media.name)+'/'+newName);
+                else
+                    callback('TV Series/'+Series.SeriesName[0]+'/'+newName);
+            },
+            error:function(err)
+            {
+                console.log(err);
+                
+            }
+        });
+    };
+    var confidence=function(name, names){
+        var max=0;
+        name=name.toLowerCase();
+        if(names)
+            $.each(names, function(i,n){
+                var tokens=n.split(' ');
+                var match=$.grep(tokens, function(token)
+                {
+                    return name.indexOf(token.toLowerCase())>-1;
+                });
+                var c= match.length/name.split(' ').length;
+                if(c>max)
+                    max=c;
+            });
+        return max;;
+    };
+    function handleResults(data){
+            if(!tvdbCache[media.name])
+                tvdbCache[media.name]=data;
+            data=data.Data;
+            if(data && data.Series && data.Series.length==1)
+            {
+                return buildPath(data.Series[0], confidence(media.name, data.Series[0].SeriesName));
+            }
+            else if(data && !data.Series)
+            {
+                var splittedName=media.name.split(' ');
+                if(splittedName.length>1)
+                {
+                    return tvdbScrapper(mediaType, $.extend({}, media, {name:splittedName[0], originalName:media.name}), callback, function(){
+                        tvdbScrapper(mediaType, $.extend({}, media, {name:splittedName[1], originalName:media.name}), callback, errorCallback);
+                    });
+                }
+                else
+                    return errorCallback();
+            }
+            else
+            {
+                var name=media.originalName || media.name;
+                var max=0;
+                var matchingSeries=false;
+                $.each(data.Series, function(index, serie){
+                    var c=confidence(name, serie.SeriesName);
+                    if(c>max)
+                    {
+                        max=c;
+                        matchingSeries=serie;
+                    }
+                });
+                if(!matchingSeries)
+                {
+                    $.each(data.Series, function(index, serie){
+                        if(!serie.AliasNames)
+                            return;
+                        var c=confidence(name,serie.AliasNames[0].split('|'));
+                        if(c>max)
+                        {
+                            max=c;
+                            matchingSeries=serie;
+                        }
+                    });
+                }
+                if(matchingSeries)
+                    buildPath(matchingSeries, max);
+                else
+                {
+                    console.log('could no find a matching serie for '+name);
+                    console.log(data.Series);
+                    return callback(false);
+                }
+            }
+        }
+        if(tvdbCache[media.name])
+            handleResults(tvdbCache[media.name]);
+        else
+            $.ajax({
+                type:'GET',
+                url:mirror+'/api/GetSeries.php',
+                dataType:'xml',
+                data:{seriesname:media.name, language:'fr'},
+                success:handleResults
+            });
+}
+
+function guessPath(media, callback)
+{
+    var newPath='';
+    switch(media.mediaType)
+    {
+        case 'music':
+            if(media.isCompilation)
+                newPath+='Compilations/';
+            else
+                newPath+=media.artist+'/';
+            newPath+=media.album+'/';
+            if(media.discNo)
+            newPath+=media.discNo+'.';
+            newPath+=media.trackNo+' - '+media.name;
+            newPath+=$('path').extname(media.path);
+            callback(newPath);
+            break;
+        case 'video':
+            if(media.episode==media.season && typeof(media.episode)=='undefined')
+                callback('Movies/'+media.displayName+$('path').extname(media.path));
+            else
+                tvdbScrapper(media.mediaType, media, callback, function(){
+                    console.log('unable to build path for media');
+                    console.log(media);
+                    callback(false);
+                });
+            break;
+    }
+}
+
+function mkdirp(path, callback)
+{
+    $('fs').exists(path, function(exists){
+        if(!exists)
+            mkdirp($('path').dirname(path), function(err){
+                if(err)
+                    callback(err);
+                else
+                    $('fs').mkdir(path, callback)
+            });
+        else
+            callback();
+    })
+}
+
+function getNonExisingPath(path, callback)
+{
+    var trial=function(i)
+    {
+        console.log(i);
+        var trialPath=path;
+        if(i>0)
+        {
+            var p=$('path');
+            trialPath=p.join(p.dirname(path), p.basename(path, p.extname(path))+' '+i+p.extname(path));
+        }
+        $('fs').exists(trialPath, function(exists)
+        {
+            console.log(trialPath);
+            if(!exists)
+            {
+                callback(trialPath);
+                return;
+            }
+            else
+            {
+                trial(i+1);
+            }
+        });
+    }
+    trial(0)
+}
+
 module.exports={
+    dropbox:function(id, name, season, episode, album, artist, callback)
+    {
+        var indexers=10;
+        var sources=$.settings('source:dropbox') || [];
+        var result=[];
+        if(processing)
+            callback(404);
+        processing='processing folders';
+        var extension=extensions[id];
+        var lastIndex=new Date(0);
+        var matcher=function(item)
+        {
+            return (!name || item.name==name) && 
+                   (!season || item.season==season) &&
+                   (!episode || item.episode==episode) &&
+                   (!album || item.episode==album) &&
+                   (!artist || item.episode==artist);
+        }
+        $.eachAsync(sources, function(index,source,next)
+        {
+            processFolder(source, extension, lastIndex, function(media){
+                result=result.concat(media);
+                next();
+            });
+        }, function(){ 
+            debug('found '+result.length+' new '+id+'(s)');
+            processing='processing indexation';
+            var trueResult=[];
+            $.eachAsync(result, function(index, path, next){
+                console.log(path);
+                scrappers[id](id, {name:fileNameCleaner(path, extensions[id]), path:path}, function(item){
+                    if(item && matcher(item.args))
+                        trueResult.push(item.args);
+                    next();
+                });
+            }, function(){
+                processing=false;
+                callback(trueResult);
+            })
+        });
+    },
+    import:function(id, name, season, episode, album, artist, callback){
+        var self=this;
+        var newTarget=$.settings('source:'+id) || [];
+        if(newTarget.length===0)
+            return callback(500, 'No source for '+id);
+        newTarget=newTarget[0];
+        if(processing)
+            return callback(404);
+        this.dropbox(id, name, season, episode, album, artist, function(result){ 
+            var paths=[];
+            processing='importing';
+            callback(result);
+            $.eachAsync(result, function(i, media, next)
+            {
+                $.emit('message', 'importing '+media.displayName);
+                guessPath(media, function(path){
+                    if(path)
+                    {
+                        path=$('path').join(newTarget, path);
+                        $('fs').stat(media.path, function(err, stats){
+                            var src=$('fs').createReadStream(media.path);
+                            
+                            mkdirp($('path').dirname(path), function(err){
+                                if(err)
+                                {
+                                    console.log(err)
+                                    next();
+                                    return;
+                                }
+                                console.log('path created if necessary');
+                                getNonExisingPath(path, function(path){
+                                    console.log('copying '+media.path+' to '+path);
+                                    var size=0;
+                                    var lastPercent=0;
+                                    var target=$('fs').createWriteStream(path);
+                                    
+                                    src.pipe(target);
+                                    src.on('data', function(buf){
+                                        size+=buf.length;
+                                        $.emit('media.import.status', {name:media.displayName, progress:size/stats.size});
+                                        var newPercent=size/stats.size*100;
+                                        if(Math.floor(newPercent)>lastPercent)
+                                        {
+                                            lastPercent=newPercent;
+                                            console.log(size/stats.size*100+'%')
+                                        }
+                                    });
+                                    src.on('end', function()
+                                    {
+                                        console.log('copied '+media.path+' to '+path);
+                                        $('fs').unlink(media.path);
+                                        paths.push(path);
+                                        next();
+                                    });
+                                    target.on('error', function(err){
+                                        console.log('could not copy '+media.path+' to '+path);
+                                        console.log(err);
+                                    });
+                                });
+                            })
+                            console.log('copying '+media.path+' to '+path);
+                        });
+                    }
+                    else 
+                        next();
+                });
+            }, function(){
+                if(paths.length===0)
+                {
+                    processing=false;
+                    return;
+                }
+                paths.unshift('media:'+id+':toIndex');
+                $.db.sadd(paths, function(err, result)
+                {
+                    processing=false;
+                    if(err)
+                        console.log(err);
+                });
+                
+            });
+        });
+    },
     get:function(id, callback)
     {
         var indexers=10;

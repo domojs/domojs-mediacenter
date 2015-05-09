@@ -3,25 +3,33 @@ var player=null;
 function switchPlayer(newPlayer)
 {
     if(player!=null)
+    {
         socket.emit('leave', player)
+        $('.player-'+player).removeClass('active');
+    }
+        
     player=newPlayer.id;
-    $('#player .btn-label').text(newPlayer.name);
+    $('.player-switch .btn-label').text(newPlayer.name);
     socket.emit('join', 'player-'+player);
+    $('.player-'+player).addClass('active');
     commands.playlist();
 }
 
 socket.on('iamaplayer', function(identity){
-    if($('#player li#player-'+identity.id).length>0)
+    if($('.player-switch').length-$('.player-switch li.player-'+identity.id).length==0)
         return;
-    $('#player ul.dropdown-menu').append('<li id="player-'+identity.id+'">'+identity.name+'</li>').click(function(){
-            switchPlayer(identity)
+    $('.player-switch:not(:has(li.player-'+identity.id+')) ul.dropdown-menu').append('<li class="player-'+identity.id+'">'+identity.name+'</li>').click(function(){
+            switchPlayer(identity);
         });
-    if($('#player li').length==1)
+    if(player==null && $('.player-switch:first li').length==1)
+    {
         switchPlayer(identity);
+        command('art')();
+    }
 });
 
 socket.on('disconnect', function(){
-    $('#player').empty();
+    $('.player-switch').empty();
 });
 
 socket.on('reconnect', function(){
@@ -29,14 +37,14 @@ socket.on('reconnect', function(){
 });
 
 socket.on('iamnotaplayer', function(identity){
-    if($('#player-'+identity.id).is('.active'))
+    if($('.player-switch-'+identity.id).is('.active'))
     {
-        if($('#player ul.dropdown-menu li').length>1)
-            $('#player ul.dropdown-menu li:first').click();
+        if($('.player-switch:first ul.dropdown-menu li').length>1)
+            $('.player-switch:first ul.dropdown-menu li:first').click();
         else
-            $('#player .btn-label').text('');
+            $('.player-switch .btn-label').text(' ');
     }
-    $('#player-'+identity.id).remove();
+    $('.player-switch-'+identity.id).remove();
     
 });
 
@@ -68,4 +76,5 @@ var commands={
 	shutdown:command('shutdown'),
 	random:command('random'),
 	playlist: command('playlist'),
+	dj:command('dj')
 };

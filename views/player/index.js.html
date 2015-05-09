@@ -1,23 +1,4 @@
 <style>
-    .progress
-    {
-        height:20px;
-        background-image:none;
-        background-color:transparent;
-        line-height:20px;
-    }
-    
-    .progress-bar
-    {
-        background-image:none;
-        background-color:rgba(255,255,255,0.2) !important;
-        font-weight:bold;
-        transition-duration:1s;
-        transition-timing-function:linear;
-        text-align:right;
-        padding-right:5px;
-        color:black;
-    }
     
     .progress .time-left
     {
@@ -121,12 +102,12 @@
     </div>
     <div id="controls">
         <a id="fullscreen" class="btn btn-default art" title="fullscreen" onclick="commands.fullscreen()"><span class="fa fa-expand"></span></a>
-        <a id="prev" class="btn btn-default art" title="prev" onclick="commands.prev()"><span class="fa fa-fast-backward"></span></a>
+        <a id="prev" class="btn btn-default art" title="prev" onclick="commands.previous()"><span class="fa fa-fast-backward"></span></a>
         <a id="pause" class="btn btn-default art" title="pause" onclick="commands.pause()"><span class="fa fa-pause"></span></a>
         <a id="play" class="btn btn-default art" title="play" onclick="commands.play()"><span class="fa fa-play"></span></a>
         <a id="stop" class="btn btn-default art" title="stop" onclick="commands.stop()"><span class="fa fa-stop"></span></a>
         <a id="next" class="btn btn-default art" title="next" onclick="commands.next()"><span class="fa fa-fast-forward"></span></a>
-        <div id="player" class="btn-group dropup">
+        <div class="player-switch btn-group dropup">
             <button type="button" class="btn btn-default art dropdown-toggle" data-toggle="dropdown">
                 <span class="btn-label"></span> <span class="caret"></span>
             </button>
@@ -136,6 +117,7 @@
         <a id="random" class="btn btn-default art" title="random" onclick="commands.random('music')"><span class="fa fa-random"></span></a>
         <a id="art" class="btn btn-default art" title="art" onclick="command('art')()">art</a>
         <a id="shutdown" class="btn btn-danger" title="shutdown" onclick="commands.shutdown()"><span class="fa fa-power-off"></span></a>
+        <a id="dj" class="btn btn-primary" title="DJ" onclick="commands.dj()"><span class="fa fa-headphones"></span></a>
     </div>
 </div> 
 <div id="console" class="row hidden" style="max-width:100%"></div>
@@ -143,6 +125,8 @@
 <script src="/assets/media/js/quantize.js"></script>
 <script src="/assets/media/js/color-tunes.js"></script>
 <script>
+    
+    socket.emit('whoisaplayer', {});
     
     $(document).bindKey('Ctrl+left', function(){
         commands.seek('-60');
@@ -208,7 +192,7 @@
 
         $('.progress-bar').css('width', status.position*100+'%', 1000).text(progressText);
 
-        var timeLeft=status.length-status.time;
+        var timeLeft=Math.ceil(status.length-status.time);
 
         var progressText=padLeft(timeLeft%60, 2, '0');
 
@@ -230,7 +214,7 @@
             var item=$('<tr>');
             var trueItem=$('<td>').text(playItem.displayName).appendTo(item);
             $('<a class="btn text-danger pull-right"><span class="fa fa-remove"></span></a>').click(function(){
-                commands.remove(item.index());
+                commands.remove(playItem.listId);
             }).appendTo(trueItem);
             if(typeof(knownNext[playItem.id])=='undefined')
             $.ajax({url:'/api/media/library/hasNext/'+playItem.id, success:function(nextId)
@@ -253,7 +237,8 @@
             }
             
             item.on('dblclick', function(){
-                commands.play(item.index());
+                debugger;
+                commands.play(playItem.listId);
             });
             if(playItem.active)
                 item.addClass('active');
@@ -270,7 +255,6 @@
             var blob = new Blob([img], {type: 'image/jpeg'}); // pass a useful mime type here
             img=URL.createObjectURL(blob);
         }
-        debugger;
         $('img.art').prop('src',img);
         $('.background-art').css('background-image', 'url("'+img+'")');
         $('#art').on('load', function(){

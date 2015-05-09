@@ -35,7 +35,7 @@ exports.init=function(config, app)
             console.log(identity);
             if(message.replyTo)
             {
-                $.io.to(message.replyTo).emit('iamaplayer', identity);
+                $.emitTo('iamaplayer', message.replyTo, identity);
             }
             else
             {
@@ -122,7 +122,7 @@ exports.init=function(config, app)
                         if(err)
                             console.log(err);
                         if(replies.length==0)
-                            return $.io.to('player-'+identity.id).emit('player.playlist', []);
+                            return $.emitTo('player.playlist', 'player-'+identity.id, []);
                         replies.unshift(playlistId+':ids')
                         $.db.rpush(replies, function(err, replies){
                             if(err)
@@ -143,6 +143,8 @@ exports.init=function(config, app)
                                 for(var i=0; i<replies.length;)
                                 {
                                     var item={};
+                                    if(message[Math.floor(i/columns.length)])
+                                        item.listId=message[Math.floor(i/columns.length)].id;
                                     for(var c in columns)
                                     {
                                         item[columns[c]]=replies[i++];
@@ -152,7 +154,7 @@ exports.init=function(config, app)
                                         item.active=true;
                                     result.push(item);
                                 }
-                                $.io.to('player-'+identity.id).emit('player.playlist', result);
+                                $.emitTo('player.playlist', 'player-'+identity.id, result);
                             });
                         });
                     });
@@ -185,14 +187,14 @@ exports.init=function(config, app)
                         })
                 });
             }
-            $.io.to('player-'+identity.id).emit('player.status', message);
+            $.emitTo('player.status', 'player-'+identity.id, message);
         });
         
         // proxying art
         socket.on('player.art', function(message){
             var callback=function(img)    
             {        
-                $.io.to('player-'+identity.id).emit('player.art', 'data:image/jpeg;base64,'+img);
+                $.emitTo('player.art', 'player-'+identity.id, 'data:image/jpeg;base64,'+img);
             };
             var setArtwork=function(id, url){
                 $.ajax({url:url}).on('response', function (res) {
@@ -219,15 +221,17 @@ exports.init=function(config, app)
                 });
             };
 
-            console.log(message);
+            //console.log(message);
             if(message.length==0 || message.toString('ascii')!='Error')
             {
                 console.log('looking for art');
                 $.db.get(mrl, function(err, id){
+                    if(id==null)
+                        return;
                     console.log(id);
                     var mediaType=id.split(':')[1];
                     $.db.hgetall(id, function(err, media){
-                        console.log(media);
+                        //console.log(media);
                         if(media.cover && media.cover!='undefined')
                         {
                             return callback(media.cover);
@@ -292,7 +296,16 @@ exports.init=function(config, app)
                                                 if(media.season)
                                                 {
                                                     $.ajax('http://private-f864a-themoviedb.apiary-proxy.com/3/tv/'+item.id+'/season/'+media.season+'?api_key=be3bc153ce74463263960789c93e29a9', {success:function(season){
-                                                        setArtwork(id, config.images.base_url+'original'+season.poster_path)
+                                                        if(season.poster_path===null && media.season>1)
+                                                        {
+                                                            $.ajax('http://private-f864a-themoviedb.apiary-proxy.com/3/tv/'+item.id+'/season/1?api_key=be3bc153ce74463263960789c93e29a9', {success:function(season){
+                                                                setArtwork(id, config.images.base_url+'original'+season.poster_path)
+                                                            }, error:function(error){
+                                                                console.log(error);
+                                                            }});
+                                                        }
+                                                        else
+                                                            setArtwork(id, config.images.base_url+'original'+season.poster_path)
                                                     }, error:function(error){
                                                         console.log(error);
                                                     }});
@@ -329,7 +342,7 @@ exports.init=function(config, app)
         // proxying commands
         socket.on('player.command', function(message){
             console.log('sending command '+message.command+' to '+message.to);
-            $.io.to(message.to).emit('player.command', message.command);
+            $.emitTo('player.command', message.to, message.command);
         });
     });
 };

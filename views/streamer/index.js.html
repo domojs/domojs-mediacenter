@@ -60,12 +60,21 @@ function renderPlaylist()
         var playItem=$('<li>').append($('<a>').text(item.displayName).on('click', function(){
             commands.play($(this).index(), item.id);
         })).appendTo('#playlist');
-        /*if(player.prop('src').endsWith('/api/media/streamer/'+item.id))
-            playItem.addClass('active');*/
+        if(player.prop('src').endsWith('/api/media/streamer/'+item.id))
+            playItem.addClass('active');
     });
 }
 
-/*player.add(preload).on('timeupdate', function(){
+var player=$('<audio controls preload="auto" />');
+var preload=$('<audio controls preload="auto" />');
+
+var context=new (AudioContext || webkitAudioContext)();
+var playerSource=context.createMediaElementSource(player[0]);
+var preloadSource=context.createMediaElementSource(preload[0]);
+playerSource.connect(context.destination);
+preloadSource.connect(context.destination);
+
+player.add(preload).on('timeupdate', function(){
     var duration=player.prop('duration');
     var currentTime=player.prop('currentTime');
     if(duration-currentTime<2000 && this==player[0])
@@ -87,11 +96,9 @@ function renderPlaylist()
     preload=swap;
     player[0].play();
     renderPlaylist();
-});*/
+});
 
-var player=false;
 
-var context=new (AudioContext || webkitAudioContext)();
 
 $.ajaxTransport('arraybuffer', function(options, originalOptions){
     if(window.ArrayBuffer && originalOptions.dataType=='arraybuffer')
@@ -123,36 +130,9 @@ var commands={
 	play: function(index, id){
 	    if(isNaN(Number(index)))
     	    commands.enqueue(index, function(){
-    	        $.ajax({
-    	            dataType:'arraybuffer',
-    	            url:'/api/media/streamer/'+index,
-    	            success:function(buffer)
-    	            {
-    	                debugger;
-            	        var source=context.createBufferSource();
-            	        var fader=(context.createGain || context.createGainNode).call(context);
-            	        context.decodeAudioData(buffer, function(buffer){
-    	                    source.buffer=buffer;
-        	                source.connect(fader);
-        	                fader.connect(context.destination);
-        	                var currentTime=context.currentTime;
-        	                fader.gain.linearRampToValueAtTime(0, currentTime);
-        	                fader.gain.linearRampToValueAtTime(1, currentTime+fadeTime);
-        	                fader.gain.linearRampToValueAtTime(1, currentTime+buffer.duration-fadeTime);
-        	                fader.gain.linearRampToValueAtTime(0, currentTime+buffer.duration);
-        	                if(player)
-        	                {
-            	                var currentTime=context.currentTime;
-            	                player.fader.gain.linearRampToValueAtTime(1, currentTime);
-            	                player.fader.gain.linearRampToValueAtTime(0, currentTime+fadeTime);
-            	                player.source.stop();
-        	                }
-        	                player={ source:source, fader:fader};
-                	        source.start(0);
-        	                renderPlaylist();
-            	        });
-    	            }
-    	        })
+    	        player.prop('src', '/api/media/streamer/'+index);
+    	        player[0].play();
+                renderPlaylist();
     	    });
 	    else
     	{
