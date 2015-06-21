@@ -72,13 +72,7 @@ module.exports={
         });
         socket.emit('join', 'player-'+to);
         djMode[to]=socket;
-        var randomizing=0;
         socket.on('player.playlist', function(playlist){
-            if(randomizing>0)
-            {
-                randomizing--;
-                return;
-            }
             var historyCount=0;
             for(var i=0;i<playlist.length;i++)
             {
@@ -91,16 +85,21 @@ module.exports={
                 }
             }
             console.log('history count: '+historyCount);
+            console.log('i: '+i);
             
-            if(historyCount<playlist.length-1 && historyCount==i && historyCount>0)
+            if(historyCount>5 && historyCount<playlist.length-1) //more than 5 and one item is active
             {
-                module.exports.remove(playlist[0].id, to, function(){});
+                module.exports.remove(playlist[0].listId, to, function(){
+                    callback(200);
+                    callback=function(){
+                        
+                    };
+                });
                 return;
             }
-            if(randomizing===0 && playlist.length<21-historyCount)
+            if(historyCount<=5 && playlist.length-historyCount<15 || historyCount > 5 && playlist.length<21)
             {
-                randomizing=21-historyCount-playlist.length;
-                module.exports.random('music', to, 21-historyCount-playlist.length, function(){
+                module.exports.random('music', to, 1, function(){
                     callback(200);
                     callback=function(){
                         

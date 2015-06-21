@@ -37,14 +37,14 @@ socket.on('reconnect', function(){
 });
 
 socket.on('iamnotaplayer', function(identity){
-    if($('.player-switch-'+identity.id).is('.active'))
+    if($('.player-'+identity.id).is('.active'))
     {
         if($('.player-switch:first ul.dropdown-menu li').length>1)
             $('.player-switch:first ul.dropdown-menu li:first').click();
         else
             $('.player-switch .btn-label').text(' ');
     }
-    $('.player-switch-'+identity.id).remove();
+    $('.player-'+identity.id).remove();
     
 });
 

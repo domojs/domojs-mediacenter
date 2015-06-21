@@ -112,7 +112,9 @@ exports.init=function(config, app)
                     socket.emit('player.command',{name:'art', args:[]});
                     $.db.get(mrl, function(err, id){
                         if(id)
-                            $.db.set(id.substr(0,id.indexOf(':',id.indexOf(':')+1))+':lastPlayed', id, $.noop);
+                            $.db.multi()
+                                .set(id.substr(0,id.indexOf(':',id.indexOf(':')+1))+':lastPlayed', id)
+                                .exec($.noop)
                     });
                 }
             });
@@ -175,20 +177,32 @@ exports.init=function(config, app)
                         console.log(err);
                         return;
                     }
-                    $.db.multi().
-                        hset(id, 'lastread', new Date().toISOString()).
-                        hincrby(id, 'readcount', 1).
-                        exec(function(err){
-                           if(err)
-                           {
-                               markedAsRead=false;
-                               console.log(err);
-                           }
-                        })
+                    $.db.hget(id, 'index', function(err, index)
+                    {
+                        if(err)
+                        {
+                            markedAsRead=false;
+                            console.log(err);
+                            return;
+                        }
+                        $.db.multi().
+                            hset(id, 'lastread', new Date().toISOString()).
+                            hset(index, 'lastread', new Date().toISOString()).
+                            hincrby(id, 'readcount', 1).
+                            exec(function(err){
+                               if(err)
+                               {
+                                   markedAsRead=false;
+                                   console.log(err);
+                               }
+                            });
+                    })
                 });
             }
             $.emitTo('player.status', 'player-'+identity.id, message);
         });
+        
+        var getArt=require('./controllers/api/library.js').getArt;
         
         // proxying art
         socket.on('player.art', function(message){
@@ -196,143 +210,13 @@ exports.init=function(config, app)
             {        
                 $.emitTo('player.art', 'player-'+identity.id, 'data:image/jpeg;base64,'+img);
             };
-            var setArtwork=function(id, url){
-                $.ajax({url:url}).on('response', function (res) {
-                    var chunks=[];
-                    if(res.statusCode==301 || res.statusCode==302 ||res.statusCode==307)
-                        return $.ajax({url:res.headers.location}).on('response', arguments.callee);
-                    res.on('data', function(chunk){
-                        chunks.push(chunk);
-                    });
-                    res.on('end', function(chunk){
-                        if(chunk)
-                            chunks.push(chunk);
-                        var img=Buffer.concat(chunks).toString('base64');
-                        $.db.hset(id, "cover", img, function(err){
-                            if(err)
-                                console.log(err);
-                            else
-                            {
-                                console.log('set art to '+url);
-                                callback(img);
-                            }
-                        });
-                    });
-                });
-            };
 
             //console.log(message);
             if(message.length==0 || message.toString('ascii')!='Error')
             {
                 console.log('looking for art');
                 $.db.get(mrl, function(err, id){
-                    if(id==null)
-                        return;
-                    console.log(id);
-                    var mediaType=id.split(':')[1];
-                    $.db.hgetall(id, function(err, media){
-                        //console.log(media);
-                        if(media.cover && media.cover!='undefined')
-                        {
-                            return callback(media.cover);
-                        }
-                        if(mediaType=='music')
-                        {
-                            $.ajax({type:'get', dataType:'json', url:'http://mb.videolan.org/ws/2/release/?fmt=json&query=artist:%22'+media.artist+'%22%20AND%20release:%22'+media.album+'%22', success:function(data)
-                            {
-                                console.log('looked for art');
-                                if(data.count>0)
-                                {
-                                    var matchingAlbums=$.grep(data.releases, function(item){
-                                        return Number(item.score)==100 && item.asin && $.grep(item.media, function(media){ return media.format!='Digital Media' }).length>0;
-                                    });
-                                    
-                                    if(matchingAlbums.length==0)
-                                    {
-                                        matchingAlbums=$.grep(data.releases, function(item){
-                                            return Number(item.score)==100 && $.grep(item.media, function(media){ return media.format!='Digital Media' }).length>0;
-                                        });
-                                    }
-                                
-                                    if(matchingAlbums.length>0)
-                                    {
-                                        return (function(i){
-                                            var func=arguments.callee;
-                                            console.log(i);
-                                            $.ajax({type:'get', dataType:'json', url:'http://mb.videolan.org/ws/2/release/'+matchingAlbums[i].id+'?fmt=json&inc=recordings', success:function(data){
-                                    
-                                                if(data.asin)
-                                                    setArtwork(id, 'http://images.amazon.com/images/P/'+data.asin+'.01._SCLZZZZZZZ_.jpg');
-                                                else if(data['cover-art-archive'] && data['cover-art-archive'].front)
-                                                {
-                                                    $.ajax({type:'get', dataType:'json', url:'http://coverartarchive.org/release/'+matchingAlbums[i].id, success:function(data){
-                                                        var front=$.grep(data.images, function(image){
-                                                            return image.front;
-                                                        });
-                                                        console.log(front);
-                                                        setArtwork(id, front[0].image);
-                                                    }});
-                                                }
-                                                else if(i<matchingAlbums.length-1)
-                                                    func(++i);
-                                            }});	
-                                        })(0);
-                                    }
-                                }
-                            }, error:function(error){
-                                console.log('could not find art');
-                            }});
-                        }
-                        else if(mediaType=='video')
-                        {
-                            $.getJSON('http://private-f864a-themoviedb.apiary-proxy.com/3/configuration?api_key=be3bc153ce74463263960789c93e29a9', function(config){
-                                if(media.episode)
-                                {
-                                    $.getJSON('http://private-f864a-themoviedb.apiary-proxy.com/3/search/tv?api_key=be3bc153ce74463263960789c93e29a9&query='+media.name, function(results){
-                                        if(results.total_results>0)
-                                        {
-                                            (function(i){
-                                                var item=results.results[i];
-                                                if(media.season)
-                                                {
-                                                    $.ajax('http://private-f864a-themoviedb.apiary-proxy.com/3/tv/'+item.id+'/season/'+media.season+'?api_key=be3bc153ce74463263960789c93e29a9', {success:function(season){
-                                                        if(season.poster_path===null && media.season>1)
-                                                        {
-                                                            $.ajax('http://private-f864a-themoviedb.apiary-proxy.com/3/tv/'+item.id+'/season/1?api_key=be3bc153ce74463263960789c93e29a9', {success:function(season){
-                                                                setArtwork(id, config.images.base_url+'original'+season.poster_path)
-                                                            }, error:function(error){
-                                                                console.log(error);
-                                                            }});
-                                                        }
-                                                        else
-                                                            setArtwork(id, config.images.base_url+'original'+season.poster_path)
-                                                    }, error:function(error){
-                                                        console.log(error);
-                                                    }});
-                                                }
-                                                else
-                                                {
-                                                    setArtwork(id, config.images.base_url+'original'+item.poster_path);
-                                                }
-                                            })(0);
-                                        }
-                                    });
-                                }
-                                else
-                                {
-                                    $.getJSON('http://private-f864a-themoviedb.apiary-proxy.com/3/search/movie?api_key=be3bc153ce74463263960789c93e29a9&query='+media.name, function(results){
-                                        if(results.total_results>0)
-                                        {
-                                            (function(i){
-                                                var item=results.results[i];
-                                                setArtwork(id, config.images.base_url+'original'+season.poster_path)
-                                            })(0);
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                    });
+                    getArt(id, callback);
                 });
             }
             else

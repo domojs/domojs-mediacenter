@@ -1,6 +1,7 @@
 var debug=function(){ console.log.apply(console, arguments) };
 var id3=require('musicmetadata');
 var md5=require('md5');
+var levenshtein=require('levenshtein');
 
 folderMapping=false;
 
@@ -30,7 +31,7 @@ function processFolder(folder, extension, lastIndex, callback)
         }
         else
         $.eachAsync(files, function(index, file, next){
-            if(file=='$RECYCLE.BIN')
+            if(file=='$RECYCLE.BIN' || file=='.recycle')
                 return next();
             file=folder+'/'+file;
             $('fs').stat(translatePath(file), function(err, stat){
@@ -71,13 +72,15 @@ function fileNameCleaner(fileName, extension)
     //trimming endTags
     fileName=fileName.replace(/(\[[A-F0-9]+\])*$/i, '');
     //trimming codecs and format
-    fileName=fileName.replace(/(^(\[[^\]]+\]_?)(\[[^\]]{2,7}\])?)|((1080|720)[pi])|[0-9]{3,4}x[0-9]{3,4}|([XH]\.?)264|xvid|ogg|mp3|ac3|\+?aac|rv(9|10)e?([_-]EHQ)?|vost(f(r)?)?|real|(?:true)(?:sub)?(?:st)?fr(?:ench)?|5\.1|dvd(rip(p)?(ed)?)?|bluray|directors\.cut|web-dl|V?[HLS][QD]|fin(al)?|TV|B(?:R)?(?:D)?(rip(p)?(ed)?)?|v[1-9]|oav/gi, '');
+    fileName=fileName.replace(/(^(\[[^\]]+\]_?)(\[[^\]]{2,7}\])?)|((1080|720)[pi])|[0-9]{3,4}x[0-9]{3,4}|([XH]\.?)264|xvid|ogg|mp3|ac3|\+?aac|rv(9|10)e?([_-]EHQ)?|multi|vost(f(r)?)?|real|(?:true)(?:sub)?(?:st)?fr(?:ench)?|5\.1|dvd(rip(p)?(ed)?)?|bluray|directors\.cut|web-dl|\.V?[HLS][QD]|fin(al)?|TV|B(?:R)?(?:D)(rip(p)?(ed)?)?|v[1-9]/gi, '');
     //checksum
     fileName=fileName.replace(/(\[[A-F0-9]+\]|\(_CRC[A-F0-9]+\))$/i, '');
     //other checksum format
     fileName=fileName.replace(/\[[a-f0-9]{6,8}\]/i, '');
+    //team specification at the beginning of the file name
+    fileName=fileName.replace(/^([A-Z]+-)/i, '');
     //team specification at the end of the file name
-    fileName=fileName.replace(/(-[A-Z]+)$/i, '');
+    fileName=fileName.replace(/([A-Z]+-)$/i, '');
     //normalizing separators to a dot
     fileName=fileName.replace(/[-\._ ]+/g, '.');
     //trimming end tags
@@ -86,6 +89,8 @@ function fileNameCleaner(fileName, extension)
     fileName=fileName.replace(/\[[\.+-]?\]/g, '');
     //removing empty tags with braces
     fileName=fileName.replace(/\{[\.+-]?\}/g, '');
+    //removing empty tags with parent
+    fileName=fileName.replace(/\([\.+-]?\)/g, '');
     //removing dates
     fileName=fileName.replace(/\[[0-9]{2}\.[0-9]{2}\.[0-9]{4}\]/, '');
     fileName=fileName.replace(/[0-9]{4}/, '');
@@ -96,10 +101,60 @@ function fileNameCleaner(fileName, extension)
     return fileName;
 }
 
+var coverQueue=new Queue(function(media, next)
+{
+    tvdbScrapper(media.mediaType, media, function(){
+            var db=$.db.another();
+            if(media.cover)
+                $.ajax({url:media.cover}).on('response', function (res) {
+                    var chunks=[];
+                    if(res.statusCode==301 || res.statusCode==302 ||res.statusCode==307)
+                        return $.ajax({url:res.headers.location}).on('response', arguments.callee);
+                    res.on('data', function(chunk){
+                        chunks.push(chunk);
+                    });
+                    res.on('end', function(chunk){
+                        if(chunk)
+                            chunks.push(chunk);
+                        var img=Buffer.concat(chunks).toString('base64');
+                        if(media.tvdbid==75001 || media.tvdbid==81877 || media.tvdbid==220911)
+                        {
+                            //console.log(media.overview);
+                            //console.log(img.length);
+                            //console.log(media.tvdbid);
+                            media.overview='';
+                        }
+                        db.multi()
+                            .hmset(media.id, 'cover', img, 'tvdbid', media.tvdbid, 'overview', media.overview)
+                            .hmset(media.index, 'cover', img, 'tvdbid', media.tvdbid, 'overview', media.overview)
+                            .exec(function(error, replies)
+                            {
+                                //console.log(arguments);
+                                db.quit();
+                                next();
+                            });
+                    });
+                });
+            else
+                db.multi()
+                    .hmset(media.id, 'tvdbid', media.tvdbid || '', 'overview', media.overview || '')
+                    .hset(media.index, 'tvdbid', media.tvdbid || '', 'overview', media.overview || '')
+                    .exec(function(error, replies)
+                    {
+                        //console.log(arguments);
+                        db.quit();
+                        next();
+                    });
+        }, function(){
+            //console.log(media);
+            next();
+        });
+})
+
 function videoScrapper(mediaType, media, callback, errorCallback)
 {
-    var episodeNumber = /(?:E(?:p(?:isode)?)?|Part)\.?([0-9]+)/i;
-    var seasonNumber = /(?:S(?:aison)?)([0-9]+)/i;
+    var episodeNumber = /(?:\.E(?:p(?:isode)?)?|Part|Chapitre)\.?([0-9]+)/i;
+    var seasonNumber = /(?:\.S(?:aison)?)([0-9]+)/i;
     var name = /(([A-Z!][A-Z!0-9]*|[A-Z!0-9]*[A-Z!])+(\.|$))+/i;
     var season = seasonNumber.exec(media.name);
     var episode = episodeNumber.exec(media.name);
@@ -108,19 +163,34 @@ function videoScrapper(mediaType, media, callback, errorCallback)
     {
         if(!season)
         {
-            console.log(media.name);
             episode=/([0-9]+)(?:x|\.)([0-9]+)/.exec(media.name);
-            console.log(episode);
             if(episode && episode[2])
             {
                 season=episode;
                 episode={'1':episode[2],index:episode.index};
             }
             else
-                episode=/(?:[^0-9]|^)([0-9]{1,3})(?:[^0-9]|$)/.exec(media.name);
+            {
+                console.log(media.name);
+                episode=/(?:\.S(?:aison)?)([0-9]+)(?:E(?:p(?:isode)?)?|Part|Chapitre)\.?([0-9]+)/i.exec(media.name);
+                if(episode && episode[2])
+                {
+                    season=episode;
+                    episode={'1':episode[2],index:episode.index};
+                }
+                else
+                    episode=/(?:[^0-9]|^)([0-9]{1,3})(?:[^0-9]|$)/.exec(media.name);
+            }
         }
         else
+        {
+            if(season && season[0])
+            {
+                media.name=media.name.substring(0,season.index)+media.name.substring(season.index+season[0].length);
+                season[0]=false;
+            }
             episode=/(?:[^0-9]|^)([0-9]{1,3})(?:[^0-9]|$)/.exec(media.name);
+        }
     }
     if(episode && episode[0])
     {
@@ -134,25 +204,41 @@ function videoScrapper(mediaType, media, callback, errorCallback)
         if(episode!==null && episode && episode[1])
             episode=episode[1];
     itemName=name.exec(media.name);
-    if(itemName.index+itemName[0].length>maxLength)
-        itemName=itemName[0].substr(0,maxLength);
-    else
-        itemName=itemName[0];
-    itemName=itemName.replace(/\./g, ' ').replace(/ $/, '');
-    var itemId=('media:'+mediaType+':'+itemName.replace(/ /g, '_')+(season && ':'+pad(season[1],2) || '')+(episode && ':'+pad(episode,3) || '')).toLowerCase();
-    var args={mediaType:mediaType, path:media.path, name:itemName, displayName:itemName};
-    if(season)
-    {
-        args.season=Number(season[1]);
-        args.displayName=args.displayName+' - S'+Number(season[1]);
-    }
-    if(episode)
-    {
-        args.episode=Number(episode);
-        args.displayName=args.displayName+' - E'+Number(episode);
-    }
     
-    callback({args:args, id:itemId, tokens:args.displayName.split(' ').concat(media.path.split(/[ \/]/g))});
+    if(itemName)
+    {
+        if(itemName.index+itemName[0].length>maxLength)
+            itemName=itemName[0].substr(0,maxLength);
+        else
+            itemName=itemName[0];
+    }
+    else
+        itemName=media.name;
+    itemName=itemName.replace(/prologue|oav/gi, '').replace(/\./g, ' ').replace(/ $/, '');
+    var args={mediaType:mediaType, path:media.path, name:itemName, displayName:itemName};
+    var finishProcessing=function(){
+        var itemId=('media:'+mediaType+':'+args.name.replace(/ /g, '_')+(season && ':'+pad(season[1],2) || '')+(episode && ':'+pad(episode,3) || '')).toLowerCase();
+        console.log(media.name);
+        console.log(args.name);
+        media.name=args.name.toLowerCase();
+        media.id=itemId;
+        if(season)
+        {
+            args.season=Number(season[1]);
+            args.displayName=args.displayName+' - S'+Number(season[1]);
+        }
+        if(episode)
+        {
+            args.episode=media.episode=Number(episode);
+            args.displayName=args.displayName+' - E'+Number(episode);
+        }
+        media.index=args.index='index:video:'+args.name.toLowerCase();
+        if(args.episode==1 || !args.episode)
+            coverQueue.enqueue(media);
+    
+        callback({args:args, id:itemId, tokens:args.displayName.split(' ').concat(media.path.split(/[ \/]/g))});
+    };
+    tvdbScrapper(mediaType, args, finishProcessing, finishProcessing);
 }
 
 function pad(n, width, z) {
@@ -211,6 +297,7 @@ function musicScrapper(mediaType, media, callback, errorCallback)
             media.disks=tags.disk.of;
             media.size=$('fs').statSync(path).size;
             media.length=tags.duration;
+            media.index='index:music:'+media.artist+':'+media.album;
             if(tags.artist && tags.artist[0])
                 media.displayName=media.name+' - '+media.artist;
             else
@@ -269,23 +356,35 @@ function indexer(mediaType, scrapper, callback)
             if(result){
                 var args=[result.id];
                 result.args.path='file:///'+result.args.path;
+                result.args.added=new Date().toISOString();
                 $.each(Object.keys(result.args), function(index, key){
                     args.push(key);
                     args.push(result.args[key]);
                 });
-                args.push('added');
-                args.push(new Date().toISOString());
                 var multi=$.db.multi()
                     .hmset(args)
+                    .hmset(result.args.index, 'name', result.args.name)
                     .set(result.args.path, result.id)
-                    .sadd('media:'+mediaType, result.id);
+                    .sadd('media:'+mediaType, result.id)
+                    .sadd('index:'+mediaType, result.args.index);
+                    
+                if(result.args.episode)
+                {
+                    multi.
+                        sadd(result.args.index+':episodes', result.id).
+                        hmset(result.args.index, 'season', result.args.season || 1);
+                    if(result.args.cover)
+                        multi.hset(result.args.index, 'cover', result.args.cover);
+                }
+                if(result.args.trackNo)
+                    multi.sadd(result.args.index+':tracks', result.id, 'album', result.args.album, 'artist', result.args.artist);
                 if(result.indexes)
                     for(var index in result.indexes)
                         multi.sadd(result.indexes[index], result.id);
                 $.each(result.tokens, function(index, token)
                 {
                     if(token!='-')
-                        multi.sadd('tokens:'+mediaType+':'+token.replace(/ /g, '_').toLowerCase(), result.id);
+                        multi.sadd('tokens:'+mediaType+':'+token.replace(/ /g, '_').toLowerCase(), result.id, result.args.index);
                 });
                 multi.exec(function(err, replies)
                 {
@@ -295,7 +394,7 @@ function indexer(mediaType, scrapper, callback)
                         indexer(mediaType, scrapper, callback, errorCallback);
                     });
                 });
-                debug(result.id);
+                //debug(result.id);
             }
             else
                 process.nextTick(function(){
@@ -341,6 +440,8 @@ function tvdbScrapper(mediaType, media, callback, errorCallback){
         if(Series.Overview)
             media.overview=Series.Overview[0];
         media.tvdbid=Series.seriesid[0];
+        if(confidence>0.8)
+            media.name=Series.SeriesName[0];
         var newName=media.displayName;
         newName+=$('path').extname(media.path);
         $.ajax({
@@ -349,37 +450,51 @@ function tvdbScrapper(mediaType, media, callback, errorCallback){
             success:function(data){
                 data=data.Data.Series;
                 Series=data[0];
-                console.log(confidence);
-                console.log(Series.Genre);
+                //console.log(confidence);
+                //console.log(Series.Genre);
+                if(Series.poster && Series.poster[0] && (media.episode==1 || !media.episode))
+                    media.cover=mirror+'/banners/'+Series.poster[0];
                 if(Series.Genre[0].indexOf('|Animation|')>-1)
                     if(confidence>0.5)
                     {
                         callback('Animes/'+Series.SeriesName[0]+'/'+newName);
                     }
                     else
+                    {
                         callback('Animes/'+(media.originalName || media.name)+'/'+newName);
+                    }
                 else
+                {
                     callback('TV Series/'+Series.SeriesName[0]+'/'+newName);
+                }
             },
             error:function(err)
             {
                 console.log(err);
-                
+                errorCallback(err);
             }
         });
     };
     var confidence=function(name, names){
         var max=0;
-        name=name.toLowerCase();
+        name=name.toLowerCase().replace(/[^A-Z0-9 ]/gi, '');
         if(names)
             $.each(names, function(i,n){
-                var tokens=n.split(' ');
+                var tokens=n.replace(/ \([0-9]{4}\)$/, '').replace(/[^A-Z0-9 ]/gi, '').toLowerCase();
+                var lev=new levenshtein(name, tokens).distance;
+                var c=1-lev/tokens.length;
+                if(lev<3 && c>=max)
+                {
+                    max=c;
+                }
+                tokens=tokens.split(' ');
                 var match=$.grep(tokens, function(token)
                 {
-                    return name.indexOf(token.toLowerCase())>-1;
+                    var indexOfToken= name.indexOf(token);
+                    return token.length>0 && indexOfToken>-1 && (indexOfToken+token.length == name.length || /^[^A-Z]/i.test(name.substring(indexOfToken+token.length)));
                 });
-                var c= match.length/name.split(' ').length;
-                if(c>max)
+                c= match.length/name.split(' ').length*match.length/tokens.length;
+                if(c>=max)
                     max=c;
             });
         return max;;
@@ -388,6 +503,10 @@ function tvdbScrapper(mediaType, media, callback, errorCallback){
             if(!tvdbCache[media.name])
                 tvdbCache[media.name]=data;
             data=data.Data;
+            /*if(media.name.toLowerCase()=='forever')
+            {
+                console.log(data.Series);
+            }*/
             if(data && data.Series && data.Series.length==1)
             {
                 return buildPath(data.Series[0], confidence(media.name, data.Series[0].SeriesName));
@@ -409,34 +528,42 @@ function tvdbScrapper(mediaType, media, callback, errorCallback){
                 var name=media.originalName || media.name;
                 var max=0;
                 var matchingSeries=false;
-                $.each(data.Series, function(index, serie){
-                    var c=confidence(name, serie.SeriesName);
-                    if(c>max)
-                    {
-                        max=c;
-                        matchingSeries=serie;
-                    }
-                });
-                if(!matchingSeries)
+                if(data)
                 {
                     $.each(data.Series, function(index, serie){
-                        if(!serie.AliasNames)
-                            return;
-                        var c=confidence(name,serie.AliasNames[0].split('|'));
-                        if(c>max)
+                        var c=confidence(name, serie.SeriesName);
+                        if(c>=max)
                         {
+                            if(matchingSeries)
+                                console.log('replacing '+matchingSeries.SeriesName+'('+max+') by '+serie.SeriesName+'('+c+')');
                             max=c;
                             matchingSeries=serie;
                         }
                     });
+                
+                    if(!matchingSeries)
+                    {
+                        console.log('trying aliases for '+name);
+                        $.each(data.Series, function(index, serie){
+                            if(!serie.AliasNames)
+                                return;
+                            var c=confidence(name,serie.AliasNames[0].split('|'));
+                            if(c>max)
+                            {
+                                max=c;
+                                matchingSeries=serie;
+                            }
+                        });
+                    }
                 }
                 if(matchingSeries)
                     buildPath(matchingSeries, max);
                 else
                 {
                     console.log('could no find a matching serie for '+name);
-                    console.log(data.Series);
-                    return callback(false);
+                    if(data)
+                        console.log(data.Series);
+                    return errorCallback();
                 }
             }
         }
@@ -447,7 +574,7 @@ function tvdbScrapper(mediaType, media, callback, errorCallback){
                 type:'GET',
                 url:mirror+'/api/GetSeries.php',
                 dataType:'xml',
-                data:{seriesname:media.name, language:'fr'},
+                data:{seriesname:media.name, language:'fr', user:'721BD243D324D1BD'},
                 success:handleResults
             });
 }
@@ -541,8 +668,8 @@ module.exports={
             return (!name || item.name==name) && 
                    (!season || item.season==season) &&
                    (!episode || item.episode==episode) &&
-                   (!album || item.episode==album) &&
-                   (!artist || item.episode==artist);
+                   (!album || item.album==album) &&
+                   (!artist || item.artist==artist);
         }
         $.eachAsync(sources, function(index,source,next)
         {
@@ -682,7 +809,6 @@ module.exports={
                         $.db.sadd(result, function(err){
                             if(err)
                                 console.log(err);
-                            console.log(arguments);
                             for(var i=0;i<indexers;i++)
                             {
                                 indexer(id, scrappers[id], callback);
@@ -733,7 +859,6 @@ module.exports={
                         $.db.sadd(result, function(err){
                             if(err)
                                 console.log(err);
-                            console.log(arguments);
                             for(var i=0;i<indexers;i++)
                             {
                                 indexer(id, scrappers[id], callback);
@@ -755,12 +880,14 @@ module.exports={
     reset:function(id, callback){
         $.db.keys('media:'+id+':*', function(err, keys){
             $.db.keys('tokens:'+id+':*', function(err, tokens){
-                keys=keys.concat(tokens);
-                console.log('removing '+keys.length+' keys');
-                $.db.del(keys, function(err)
-                {
-                    console.log(err);
-                    callback(err || 'ok');
+                $.db.keys('index:'+id+'*', function(err, indexes){
+                    keys=keys.concat(tokens).concat(indexes);
+                    console.log('removing '+keys.length+' keys');
+                    $.db.del(keys, function(err)
+                    {
+                        console.log(err);
+                        callback(err || 'ok');
+                    });                
                 });
             })
         });

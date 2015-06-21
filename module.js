@@ -1,16 +1,16 @@
         $.getScript('assets/media/js/player.js', function(){
-            var miniPlayer=$('<a style="padding-top:0; padding-bottom:0; height:54px" class="mini-player xs-invisible dropdown-toggle" data-toggle="dropdown">\
-                <div class="col-md-4">\
+            var miniPlayer=$('<a style="padding-top:0; padding-bottom:0; height:54px" class="mini-player dropdown-toggle" data-toggle="dropdown">\
+                <div class="col-xs-4">\
                     <img class="art" style="height:54px"/>\
                 </div>\
-                <div class="col-md-8 row">\
-                    <div style="height:5px" class="progress">\
+                <div class="col-xs-8 row">\
+                    <div style="height:5px;" class="progress">\
                         <div class="progress-bar text-art-tertiary" role="progressbar" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: 0;">\
                         </div>\
                         <div class="time-left text-art-tertiary"></div>\
                     </div>\
                     <div class="text" style="color:white; overflow:hidden; width:150px; line-height:1em;height:1em;text-overflow:ellipsis;"></div>\
-                    <div class="player-switch btn-group push-right">\
+                    <div class="player-switch btn-group push-right hidden-xs">\
                         <button type="button" class="btn btn-xs btn-default art dropdown-toggle" data-toggle="dropdown">\
                             <span class="caret"></span>\
                         </button>\
