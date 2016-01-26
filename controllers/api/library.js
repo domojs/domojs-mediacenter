@@ -7,14 +7,14 @@ function pad(n, width, z) {
 }
 
 module.exports={
-    item:function(id, callback){
-        $.db.hgetall(id, function(error, result){
+    item:function(db, id, callback){
+        db.hgetall(id, function(error, result){
             if(error)
                 console.log(error);
             callback(result);
         });
     },
-    get:function(id, viewName, draw, length, start, search, callback)
+    get:function(db, id, viewName, draw, length, start, search, callback)
     {
         if(typeof(search)=='undefined')
             search=this.request.query['search[value]'].toLowerCase();
@@ -23,29 +23,35 @@ module.exports={
 		
         if(search)
         {
-            $.db.del('media:search', function(error, result){
+            db.select(0, function(error){
                 if(error)
                 {
                     console.log(error);
                 }
-                var args=['media:search', 'media:'+id];
-                if(viewName=='thumbnails')
-                {
-                    args[0]+=':index';
-                    args[1]='index:'+id;
-                }
-                    
-                
-                $.each(search.split(' '), function(index, token)
-                {
-                    args.push('tokens:'+id+':'+token);
-                });
-                console.log('sinterstore '+args.join(' '));
-                $.db.sinterstore(args, function(error, results){
+                db.del('media:search', function(error, result){
                     if(error)
+                    {
                         console.log(error);
-                    module.exports.get.call(self, id, viewName, draw, length, start, false, callback);
+                    }
+                    var args=['media:search', 'media:'+id];
+                    if(viewName=='thumbnails')
+                    {
+                        args[0]+=':index';
+                        args[1]='index:'+id;
+                    }
+                        
                     
+                    $.each(search.split(' '), function(index, token)
+                    {
+                        args.push('tokens:'+id+':'+token);
+                    });
+                    console.log('sinterstore '+args.join(' '));
+                    db.sinterstore(args, function(error, results){
+                        if(error)
+                            console.log(error);
+                        module.exports.get.call(self, db, id, viewName, draw, length, start, false, callback);
+                        
+                    });
                 });
             });
             return;
@@ -80,29 +86,37 @@ module.exports={
                 id='search:index';
 		}
         console.log('library '+id+' LIMIT '+start+','+length);
-		$.db.scard('media:'+id, function(error, count){
+        db.select(0, function(error){
             if(error)
             {
                 console.log(error);
                 return callback(500, error);
             }
-            console.log(count+' found');
-            $.db.osort('media:'+id, columns, viewName=='thumbnails' && '*->lastRead', start, start && (length || 100), function(error, result){
+    		db.scard('media:'+id, function(error, count){
                 if(error)
                 {
                     console.log(error);
                     return callback(500, error);
                 }
-                callback({
-                    draw:draw,
-                    recordsTotal:count,
-                    recordsFiltered:count,
-                    data:result
-                    });
+                console.log(count+' found');
+            
+                db.osort('media:'+id, columns, viewName=='thumbnails' && '*->lastRead', start, start && (length || 100), function(error, result){
+                    if(error)
+                    {
+                        console.log(error);
+                        return callback(500, error);
+                    }
+                    callback({
+                        draw:draw,
+                        recordsTotal:count,
+                        recordsFiltered:count,
+                        data:result
+                        });
+                });
             });
         });
     },
-    hasNext:function(id, callback)
+    hasNext:function(db, id, callback)
     {
         id=decodeURIComponent(id);
         var fragments=id.split(':');
@@ -113,19 +127,21 @@ module.exports={
                 return callback(404);
             fragments[index]=pad(++fragments[index], 3);
             var nextId=fragments.join(':');
-            $.db.exists(nextId, function(error, exists){
-                if(exists)
-                    callback(nextId);
-                else 
-                {
-                    fragments[index]--;
-                    tryFind(--index);
-                }
-            });
+            db.select(0, function(){
+                db.exists(nextId, function(error, exists){
+                    if(exists)
+                        callback(nextId);
+                    else 
+                    {
+                        fragments[index]--;
+                        tryFind(--index);
+                    }
+                });
+            })
         };
         tryFind(fragments.length-1);
     },
-    getArt:function(id, callback)
+    getArt:function(db, id, callback)
     {
         var setArtwork=function(id, url){
             $.ajax({url:url}).on('response', function (res) {
@@ -139,7 +155,7 @@ module.exports={
                     if(chunk)
                         chunks.push(chunk);
                     var img=Buffer.concat(chunks).toString('base64');
-                    $.db.hset(id, "cover", img, function(err){
+                    db.hset(id, "cover", img, function(err){
                         if(err)
                             console.log(err);
                         else
@@ -159,21 +175,27 @@ module.exports={
         if(ids.length<2)
             callback(400);
         var mediaType=ids[1];
-        $.db.hgetall(id, function(err, media){
+        db.hgetall(id, function(err, media){
             var process=arguments.callee;
+            if(err!=null)
+            {
+                console.log(err);
+                callback(500, err);
+                return;
+            }
             if(media.cover && media.cover!='undefined')
             {
                 return callback(media.cover);
             }
             if(media.index)
             {
-                $.db.hgetall(media.index, function(err, index){
+                db.hgetall(media.index, function(err, index){
                     var oldcallback=callback;
                     callback=function(img)
                     {
                         if(!isNaN(img))
                             oldcallback(img);
-                        $.db.hset(id, "cover", img, function(err){
+                        db.hset(id, "cover", img, function(err){
                             if(err)
                                 console.log(err);
                             else

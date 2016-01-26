@@ -216,7 +216,7 @@ exports.init=function(config, app)
             {
                 console.log('looking for art');
                 $.db.get(mrl, function(err, id){
-                    getArt(id, callback);
+                    getArt($.db.another(), id, callback);
                 });
             }
             else

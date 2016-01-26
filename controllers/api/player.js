@@ -7,11 +7,11 @@ function cmd(to, cmd, callback)
 var djMode={};
 
 module.exports={
-    play:function(id, to, callback){
-        $.db.hget(id, 'path', function(err, path){
+    play:function(db, id, to, callback){
+        db.hget(id, 'path', function(err, path){
             console.log('play '+path+' to '+to);
             if(path)
-                $.db.set(id.substr(0,id.indexOf(':',id.indexOf(':')+1))+':lastPlayed', id, function(){
+                db.set(id.substr(0,id.indexOf(':',id.indexOf(':')+1))+':lastPlayed', id, function(){
                     cmd(to, {name:'play', args:[path || id]}, callback);
                 });
             else
@@ -22,8 +22,8 @@ module.exports={
     {
         cmd(to, {name:'remove', args:[id]}, callback);
     },
-    enqueue:function(id, to, callback){
-        $.db.hget(id, 'path', function(err, path){
+    enqueue:function(db, id, to, callback){
+        db.hget(id, 'path', function(err, path){
             console.log('enqueing '+path+' to '+to);
             cmd(to, {name:'enqueue', args:[path]}, callback);
         });
@@ -34,10 +34,10 @@ module.exports={
     volume:function(id, to, callback){
         cmd(to, {name:'volume', args:[id]}, callback);
     },
-    random:function(id, to, repeat, callback){
+    random:function(db, id, to, repeat, callback){
         var self=this;
         repeat=repeat || 1;
-        $.db.scard('media:'+id, function(error, count){
+        db.scard('media:'+id, function(error, count){
             if(error)
                 return console.log(error);
             var randoms=[];
@@ -46,12 +46,12 @@ module.exports={
                 randoms.push(Math.floor(Math.random()*count));
             }
             $.eachAsync(randoms, function(index, random, next){
-                $.db.sort('media:'+id, 'LIMIT', random, 1, 'GET', '#', 'ALPHA', function(err, items)
+                db.sort('media:'+id, 'LIMIT', random, 1, 'GET', '#', 'ALPHA', function(err, items)
                 {
                     if(err)
                         return console.log(err);
                     
-                    self.enqueue(items[0], to, next);
+                    self.enqueue(db, items[0], to, next);
                 });
             }, callback);
         });
@@ -59,7 +59,7 @@ module.exports={
     get:function(id, to, callback){
         cmd(to, {name:id, args:[]}, callback);
     },
-    dj:function(id, to, callback)
+    dj:function(db, id, to, callback)
     {
         var socket=require('socket.io-client')('http://localhost');
         socket.on('iamnotaplayer', function(identity){
@@ -99,7 +99,7 @@ module.exports={
             }
             if(historyCount<=5 && playlist.length-historyCount<15 || historyCount > 5 && playlist.length<21)
             {
-                module.exports.random('music', to, 1, function(){
+                module.exports.random(db, 'music', to, 1, function(){
                     callback(200);
                     callback=function(){
                         

@@ -29,9 +29,9 @@ function translatePath(path){
 }
 
 module.exports={
-    get:function(id, callback){
+    get:function(db, id, callback){
         var res=this.response;
-        $.db.hget(id, 'path', function(err, path){
+        db.hget(id, 'path', function(err, path){
             if(err)
                 console.log(err);
             path=path.substring('file:///'.length);
