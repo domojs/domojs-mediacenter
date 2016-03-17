@@ -675,7 +675,7 @@ function getNonExisingPath(path, callback)
     trial(0)
 }
 
-function move(media, next)
+function move(newTarget, media, next)
 {
     guessPath(media, function(path){
         if(path)
@@ -728,7 +728,7 @@ function move(media, next)
                                     if(error)
                                     {
                                         console.log(error);
-                                        paths.push(path);
+                                        //paths.push(path);
                                         next();
                                     }
                                     else if(files.length==1 && files[0].endsWith('.nfo'))
@@ -737,7 +737,7 @@ function move(media, next)
                                             if(err)
                                             {
                                                 console.log(err)
-                                                paths.push(path);
+                                                //paths.push(path);
                                                 next();
                                             }
                                             else
@@ -745,7 +745,7 @@ function move(media, next)
                                                 $('fs').rmdir(translatePath($('path').dirname(media.path)), function(error){
                                                     if(error)
                                                         console.log(error);
-                                                    paths.push(path);
+                                                    //paths.push(path);
                                                     next();
                                                 })
                                             }
@@ -755,12 +755,12 @@ function move(media, next)
                                         $('fs').rmdir(translatePath($('path').dirname(media.path)), function(error){
                                             if(error)
                                                 console.log(error);
-                                            paths.push(path);
+                                            //paths.push(path);
                                             next();
                                         })
                                     else
                                     {
-                                        paths.push(path);
+                                        //paths.push(path);
                                         next();
                                     }
                                 })
@@ -799,33 +799,31 @@ function processSource(source, type, name, season, episode, album, artist, callb
                (!album || item.album==album) &&
                (!artist || item.artist==artist);
     }
-    callback(function(send){
-        var self=this;
-        $.eachAsync(sources, function(index,source,next)
-        {
-            processFolder(source, extension, lastIndex, function(media){
-                result=result.concat(media);
+    var self=this;
+    $.eachAsync(sources, function(index,source,next)
+    {
+        processFolder(source, extension, lastIndex, function(media){
+            result=result.concat(media);
+            next();
+        });
+    }, function(){ 
+        debug('found '+result.length+' new '+type+'(s)');
+        processing='processing indexation';
+        var trueResult={};
+        $.eachAsync(result, function(index, path, next){
+            scrappers[type](type, {name:fileNameCleaner(path, extensions[type]), path:path}, function(item){
+                if(item && matcher(item.args))
+                {
+                    var group=trueResult[item.args.album || item.args.name];
+                    if(!group)
+                        trueResult[item.args.album || item.args.name]=group=[];
+                    group.push(item.args);
+                }
                 next();
             });
-        }, function(){ 
-            debug('found '+result.length+' new '+type+'(s)');
-            processing='processing indexation';
-            var trueResult={};
-            $.eachAsync(result, function(index, path, next){
-                scrappers[type](type, {name:fileNameCleaner(path, extensions[type]), path:path}, function(item){
-                    if(item && matcher(item.args))
-                    {
-                        var group=trueResult[item.args.album || item.args.name];
-                        if(!group)
-                            trueResult[item.args.album || item.args.name]=group=[];
-                        group.push(item.args);
-                    }
-                    next();
-                });
-            }, function(){
-                processing=false;
-                send(trueResult);
-            });
+        }, function(){
+            processing=false;
+            callback(trueResult);
         });
     });
 }
@@ -833,7 +831,7 @@ function processSource(source, type, name, season, episode, album, artist, callb
 module.exports={
     dropbox:function(id, name, season, episode, album, artist, callback)
     {
-        processSource('source:dropbox', id, name, season, episode, album, callback);
+        processSource('source:dropbox', id, name, season, episode, album, artist, callback);
     },
     reorganize:function(db, id, name, album, artist, callback){
         var self=this;
@@ -843,39 +841,35 @@ module.exports={
         newTarget=translatePath(newTarget[0]);
         if(processing)
             return callback(404);
-        callback(function(send){
-            processSource('source:'+id, id, name, null, null, album, artist, function(async){
-                async(function(result){
-                    var paths=[];
-                    processing='importing';
-                    send(result);
-                    $.eachAsync(result, function(i, subResult, next1)
-                    {
-                        console.log(arguments);
-                        $.eachAsync(subResult, function(i, media, next)
-                        {
-                            $.emit('message', 'importing '+media.displayName);
-                            move(media, next);
-                        }, function(){
-                            next1();
-                        });
-                    },
-                    function(){
-                        if(paths.length===0)
-                        {
-                            processing=false;
-                            return;
-                        }
-                        paths.unshift('media:'+id+':toIndex');
-                        db.sadd(paths, function(err, result)
-                        {
-                            processing=false;
-                            if(err)
-                                console.log(err);
-                        });
-                    })
+        processSource('source:'+id, id, name, null, null, album, artist, function(result){
+            var paths=[];
+            processing='importing';
+            callback(result);
+            $.eachAsync(result, function(i, subResult, next1)
+            {
+                console.log(arguments);
+                $.eachAsync(subResult, function(i, media, next)
+                {
+                    $.emit('message', 'importing '+media.displayName);
+                    move(newTarget, media, next);
+                }, function(){
+                    next1();
                 });
-            });
+            },
+            function(){
+                if(paths.length===0)
+                {
+                    processing=false;
+                    return;
+                }
+                paths.unshift('media:'+id+':toIndex');
+                db.sadd(paths, function(err, result)
+                {
+                    processing=false;
+                    if(err)
+                        console.log(err);
+                });
+            })
         });
     },
     import:function(db, id, name, season, episode, album, artist, callback)
@@ -887,39 +881,35 @@ module.exports={
         newTarget=translatePath(newTarget[0]);
         if(processing)
             return callback(404);
-        callback(function(send){
-            self.dropbox(id, name, season, episode, album, artist, function(async){
-                async(function(result){
-                    var paths=[];
-                    processing='importing';
-                    send(result);
-                    $.eachAsync(result, function(i, subResult, next1)
-                    {
-                        console.log(arguments);
-                        $.eachAsync(subResult, function(i, media, next)
-                        {
-                            $.emit('message', 'importing '+media.displayName);
-                            move(media, next);
-                        }, function(){
-                            next1();
-                        });
-                    },
-                    function(){
-                        if(paths.length===0)
-                        {
-                            processing=false;
-                            return;
-                        }
-                        paths.unshift('media:'+id+':toIndex');
-                        db.sadd(paths, function(err, result)
-                        {
-                            processing=false;
-                            if(err)
-                                console.log(err);
-                        });
-                    })
+        self.dropbox(id, name, season, episode, album, artist, function(result){
+            var paths=[];
+            processing='importing';
+            callback(result);
+            $.eachAsync(result, function(i, subResult, next1)
+            {
+                $.eachAsync(subResult, function(i, media, next)
+                {
+                    console.log(arguments);
+                    $.emit('message', 'importing '+media.displayName);
+                    move(newTarget, media, next);
+                }, function(){
+                    next1();
                 });
-            });
+            },
+            function(){
+                //if(paths.length===0)
+                //{
+                    processing=false;
+                    return;
+                //}
+                //paths.unshift('media:'+id+':toIndex');
+                //db.sadd(paths, function(err, result)
+                //{
+                //    processing=false;
+                //    if(err)
+                //        console.log(err);
+                //});
+            })
         });
     },
     get:function(db, id, callback)
