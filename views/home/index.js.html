@@ -8,3 +8,24 @@
     <li><a href="#media/player">Player</a></li>
     <li><a href="#media/streamer">Streamer</a></li>
 </ul>
+<div id="mainPane" class="col-sm-10">
+    <h2>Dropbox</h2>
+    <hr/> <a href="api/media/indexer/import/video">Import all</a>
+    <ul id="items" class="list-group"> </ul>
+</div>
+<script>
+    $.getJSON('api/media/indexer/dropbox/video', function(data){
+        debugger;
+        $.each(data, function(key, e){
+            var group=$('<li>').addClass('list-group-item').append('<ul class="list-group">');
+            group.prepend($('<a href>').text(key).click(function(){
+                    $.getJSON('api/media/indexer/import/video?name='+encodeURIComponent(key), $.noop);
+                    return false;
+                }));
+            $.each(e, function(i, media){
+                $('<li>').addClass('list-group-item').text(media.displayName).appendTo(group.find('ul'))
+            })
+            group.appendTo('#items')
+        });
+    })
+</script>

@@ -100,7 +100,7 @@ module.exports={
                 }
                 console.log(count+' found');
             
-                db.osort('media:'+id, columns, viewName=='thumbnails' && '*->lastRead', start, start && (length || 100), function(error, result){
+                db.osort('media:'+id, columns, viewName=='thumbnails' && '*->lastRead' || 0, start, start && (length || 100), function(error, result){
                     if(error)
                     {
                         console.log(error);

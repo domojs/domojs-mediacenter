@@ -20,7 +20,7 @@ $.getScript('assets/media/js/player.js', function(){
                 </div>\
             </a>');
             var extendedPlayer=$('<ul class="dropdown-menu" role="menu"></ul>');
-            miniPlayer=miniPlayer.add(extendedPlayer);
+            miniPlayer=miniPlayer.append(extendedPlayer);
             var $commands=$('<li></li>');
             extendedPlayer.append($commands);
             $commands.append($('<a class="pause"><span class="fa fa-chevron-left"></span></a>').click(function(){
@@ -33,7 +33,7 @@ $.getScript('assets/media/js/player.js', function(){
                 commands.prev();
             }));
             $('a', $commands).css('display', 'inline')
-
+            
             socket.on('player.status', function(status){
                 switch(status.state)
                 {

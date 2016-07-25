@@ -1,0 +1,221 @@
+<div class="swipe-screen dock top left bottom right">
+    <div class="big">
+        <div class="legend darker dock bottom right left">
+            
+        </div>
+        <div class="time dock top right">
+            
+        </div>
+        <div class="dock bottom left">
+            <span class="day">
+                
+            </span>
+            <span class="date">
+                
+            </span>
+        </div>
+        <canvas id="player" width="800" height="600" style="border:1px solid red; width:800px; height:600px"></canvas>
+    </div>
+</div>
+<style>
+    .swipe-screen,.swipe-screen > *
+    {
+        height:100%;
+        margin:0;
+        padding:0;
+        width:100%;
+    }
+    .swipe-screen
+    {
+        background-attachment:fixed;
+    }
+
+    ul.weather
+    {
+        list-style:none;
+    }
+    
+    ul.weather li
+    {
+        float:left;
+        width:300px;
+        height:400px;
+        margin-right:20px;
+        font-size:40pt;
+        padding-left:15px;
+        padding-right:15px;
+    }
+
+    ul.weather li .temp-min,
+    ul.weather li .temp-max
+    {
+        text-align:center;
+        width:100%;
+        display:block;
+    }
+
+    
+    ul.weather li svg
+    {
+        height:100px;
+        width:100%;
+    }
+    
+    ul.weather li .temp
+    {
+        line-height:40pt;
+    }
+
+    .darker
+    {
+        background-color:rgba(0,0,0,0.5);
+    }
+    
+    .legend
+    {
+        font-size:large;
+        text-align:right;
+    }
+
+    .agenda
+    {
+        height:70%;
+        width:500px;
+        margin-bottom:19pt;
+    }
+
+    #content
+    {
+        padding-top:0;
+    }
+    body > .navbar
+    {
+        display:none;
+    }
+    
+    .weather svg
+    {
+        height:300px;
+        width:300px;
+        
+    }
+    
+    .weather svg
+    {
+        float:left;
+    }
+    
+    .time
+    {
+        padding-right:20px;
+    }
+    
+    .day
+    {
+        margin-left:20px;
+    }
+    
+    .weather .temp, .time
+    {
+        line-height:300px;
+    }
+    
+    .weather svg path
+    {
+        fill:black;
+    }
+    
+    .dark .weather svg path
+    {
+        fill: white;
+    }
+    
+    .dark
+    {
+        color:white;
+    }
+    
+    .big
+    {
+        font-size:100pt;
+    }
+    
+    .time
+    {
+        margin-right:10px;
+    }
+    
+    .dock
+    {
+        position:absolute;
+    }
+    .dock.top
+    {
+        top:0;
+    }
+    .dock.left
+    {
+        left:0;
+    }
+    .dock.right
+    {
+        right:0;
+    }
+    .dock.bottom
+    {
+        bottom:0;
+    }
+</style>
+<script>
+
+    function updateBackdrop(){
+        var request=remote.require('request');
+        request('https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&pid=hp&video=0', function(error, data){
+            if(data)
+                data=JSON.parse(data.body);
+                
+            if(data && data.images)
+            {
+                $('.legend').text(data.images[0].copyright)
+                $('.swipe-screen').css('background-image', 'url("https://www.bing.com'+data.images[0].url+'")').toggleClass('dark', data.images[0].drk==1);
+            }
+        });
+    }
+    
+    function updateDateAndTime(){
+        $('.time').text(moment().format('LT'));
+        $('.day').text(moment().format('dddd'));
+        $('.date').text(moment().format('ll'));
+    }
+    
+    if(require)
+    {
+        try
+        {
+            var remote=require('remote');
+            var moment=remote.require('moment');
+            moment.locale('fr');
+            var now=new Date();
+            updateDateAndTime();
+            updateBackdrop();
+            setTimeout(function(){
+                updateDateAndTime();
+                setInterval(function(){
+                    var now=new Date();
+                    updateDateAndTime();
+                    if(now.getHours()==0 && now.getMinutes()==0)
+                        updateBackdrop();
+                }, 60000);
+            }, (60-now.getSeconds())*1000);
+        }
+        catch(e)
+        {
+            console.error(e);
+        }
+        var player=require(cwd+'/node_modules/wcjs-renderer').init($('canvas')[0]);
+        player.play("file:///mnt/videos/TV Series/Elementary.S01E01.FRENCH.720p.WEB-DL.H264-MiND.mkv");
+        
+    }
+    
+    
+</script>

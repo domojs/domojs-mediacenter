@@ -1,6 +1,6 @@
 function cmd(to, cmd, callback)
 {
-    $.emitTo('player.command', to, cmd);
+    $.emitTo('player.command', '/#'+to, cmd);
     callback(200);
 }
 
