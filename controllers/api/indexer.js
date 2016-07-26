@@ -623,13 +623,12 @@ function move( newTarget, media, next ) {
 
                 mkdirp( $( 'path' ).dirname( path ), function( err ) {
                     if( err ) {
-                        console.log( err )
-                        next();
+                        next( err );
                         return;
                     }
-                    console.log( 'path created if necessary' );
+                    debug( 'path created if necessary' );
                     getNonExisingPath( path, function( path ) {
-                        console.log( 'copying ' + media.path + ' to ' + path );
+                        debug( 'copying ' + media.path + ' to ' + path );
                         var size = 0;
                         var lastPercent = 0;
                         var target = $( 'fs' ).createWriteStream( path );
@@ -647,47 +646,40 @@ function move( newTarget, media, next ) {
                         });
                         src.on( 'end', function() {
                             if( error != null ) {
-                                console.error( 'an error has occurred while copying : ' + error.code );
+                                debug( 'an error has occurred while copying : ' + error.code );
                                 return;
                             }
-                            console.log( 'copied ' + media.path + ' to ' + path );
+                            var oldPath = media.path;
+                            media.path = path;
+                            debug( 'copied ' + oldPath + ' to ' + path );
 
-                            $( 'fs' ).unlink( translatePath( media.path ), function( err ) {
+                            $( 'fs' ).unlink( translatePath( oldPath ), function( err ) {
                                 if( err )
-                                    console.log( err );
-                                $( 'fs' ).readdir( translatePath( $( 'path' ).dirname( media.path ) ), function( error, files ) {
-                                    console.log( files );
+                                    debug( err );
+                                $( 'fs' ).readdir( translatePath( $( 'path' ).dirname( oldPath ) ), function( error, files ) {
+                                    debug( files );
                                     if( error ) {
-                                        console.log( error );
-                                        //paths.push(path);
-                                        next();
+                                        next( error );
                                     }
                                     else if( files.length == 1 && files[ 0 ].endsWith( '.nfo' ) ) {
                                         $( 'fs' ).unlink( files[ 0 ], function( err ) {
                                             if( err ) {
-                                                console.log( err )
-                                                //paths.push(path);
-                                                next();
+                                                next( err );
                                             }
                                             else {
-                                                $( 'fs' ).rmdir( translatePath( $( 'path' ).dirname( media.path ) ), function( error ) {
+                                                $( 'fs' ).rmdir( translatePath( $( 'path' ).dirname( oldPath ) ), function( error ) {
                                                     if( error )
-                                                        console.log( error );
-                                                    //paths.push(path);
-                                                    next();
+                                                        next( error );
                                                 })
                                             }
                                         })
                                     }
                                     else if( files.length == 0 )
-                                        $( 'fs' ).rmdir( translatePath( $( 'path' ).dirname( media.path ) ), function( error ) {
+                                        $( 'fs' ).rmdir( translatePath( $( 'path' ).dirname( oldPath ) ), function( error ) {
                                             if( error )
-                                                console.log( error );
-                                            //paths.push(path);
-                                            next();
+                                                next( error );
                                         })
                                     else {
-                                        //paths.push(path);
                                         next();
                                     }
                                 })
@@ -695,12 +687,12 @@ function move( newTarget, media, next ) {
                         });
                         target.on( 'error', function( err ) {
                             error = err;
-                            console.log( 'could not copy ' + media.path + ' to ' + path );
-                            console.log( err );
+                            debug( 'could not copy ' + media.path + ' to ' + path );
+                            debug( err );
                         });
                     });
                 })
-                console.log( 'copying ' + media.path + ' to ' + path );
+                debug( 'copying ' + media.path + ' to ' + path );
             });
         }
         else
@@ -804,12 +796,18 @@ module.exports = {
         self.dropbox( id, name, season, episode, album, artist, function( result ) {
             var paths = [];
             processing = 'importing';
+            if(!$.console)
             callback( result );
             $.eachAsync( result, function( i, subResult, next1 ) {
                 $.eachAsync( subResult, function( i, media, next ) {
                     console.log( arguments );
                     $.emit( 'message', 'importing ' + media.displayName );
-                    move( newTarget, media, next );
+                    move( newTarget, media, function( err ) {
+                        if( err )
+                            debug( err );
+                        else
+                            paths.push( media.path );
+                    });
                 }, function() {
                     next1();
                 });
@@ -824,6 +822,8 @@ module.exports = {
                         processing = false;
                         if( err )
                             console.log( err );
+                        if($.console)
+                            callback(path);
                     });
                 })
         });
