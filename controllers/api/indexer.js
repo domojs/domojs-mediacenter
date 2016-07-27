@@ -36,7 +36,7 @@ function processFolder( folder, extension, lastIndex, callback ) {
                         debug( err );
                         next();
                     }
-                    if( stat.isDirectory() )
+                    else if( stat.isDirectory() )
                         processFolder( file, extension, lastIndex, function( results ) {
                             result = result.concat( results );
                             next();
