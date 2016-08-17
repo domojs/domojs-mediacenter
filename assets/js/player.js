@@ -1,7 +1,6 @@
 var player = null;
 
 function switchPlayer( newPlayer ) {
-    debugger;
     if( player != null ) {
         socket.emit( 'leave', 'player-'+player )
         $( '.player-' + player ).removeClass( 'active' );
@@ -28,7 +27,8 @@ socket.on( 'iamaplayer', function( identity ) {
 });
 
 socket.on( 'disconnect', function() {
-    $( '.player-switch' ).empty();
+    $( '.player-switch .dropdown-menu' ).empty();
+    $( '.player-switch .dropdown-toggle .btn-label' ).empty();
 });
 
 socket.on( 'reconnect', function() {

@@ -1,4 +1,4 @@
-var debug=$('debug')('domojs:media');
+var debug = $( 'debug' )( 'domojs:media' );
 
 exports.init = function( config, app ) {
     if( typeof ( $.settings( 'source:video' ) ) == 'undefined' )
@@ -19,7 +19,7 @@ exports.init = function( config, app ) {
 
     $.io.on( 'connection', function( socket ) {
 
-        var identity = { id: socket.id.substr( '/#'.length ), socketId:socket.id };
+        var identity = { id: socket.id.substr( '/#'.length ), socketId: socket.id };
         var playlistId = 'media:playlist:' + identity.id;
         var mrl;
         var markedAsRead = false;
@@ -122,7 +122,7 @@ exports.init = function( config, app ) {
                         if( replies.length == 0 )
                             return $.emitTo( 'player.playlist', 'player-' + identity.id, [] );
                         replies.unshift( playlistId + ':ids' )
-                        debug(replies);
+                        debug( replies );
                         $.db.rpush( replies, function( err, replies ) {
                             if( err )
                                 console.log( err );
@@ -161,31 +161,39 @@ exports.init = function( config, app ) {
 
         // proxying status
         socket.on( 'player.status', function( message ) {
-            if( !markedAsRead && message.time / message.length > 0.5 ) {
-                markedAsRead = true;
-                $.db.get( mrl, function( err, id ) {
+            if( message.status != 'stopped' ) {
+                var db = $.db.another();
+                db.get( mrl, function( err, id ) {
                     if( err ) {
                         markedAsRead = false;
-                        console.log( err );
+                        db.quit();
+                        debug( err );
                         return;
                     }
-                    $.db.hget( id, 'index', function( err, index ) {
+                    var position = Math.round( message.time / message.length * 100 );
+                    if( position > 95 )
+                        position = 100;
+                    db.hset( id, 'position', position, function( err ) {
                         if( err ) {
                             markedAsRead = false;
-                            console.log( err );
+                            db.quit();
+                            debug( err );
                             return;
                         }
-                        $.db.multi().
-                            hset( id, 'lastread', new Date().toISOString() ).
-                            hset( index, 'lastread', new Date().toISOString() ).
-                            hincrby( id, 'readcount', 1 ).
-                            exec( function( err ) {
+                        if( !markedAsRead && position == 100 ) {
+                            markedAsRead = true;
+                            var markAsRead = require( './controllers/api/library.js' ).markAsRead;
+                            markAsRead( db, id, function( err ) {
                                 if( err ) {
                                     markedAsRead = false;
                                     console.log( err );
                                 }
-                            });
-                    })
+                                db.quit();
+                            })
+                        }
+                        else 
+                            db.quit();
+                    });
                 });
             }
             $.emitTo( 'player.status', 'player-' + identity.id, message );

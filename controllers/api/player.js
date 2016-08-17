@@ -12,10 +12,10 @@ module.exports={
             console.log('play '+path+' to '+to);
             if(path)
                 db.set(id.substr(0,id.indexOf(':',id.indexOf(':')+1))+':lastPlayed', id, function(){
-                    cmd(to, {name:'play', args:[path || id]}, callback);
+                    cmd(to, {name:'play', args:[{path:path , id:id}]}, callback);
                 });
             else
-                cmd(to, {name:'play', args:[path || id]}, callback);
+                cmd(to, {name:'play', args:[{path:path , id:id}]}, callback);
         });
     },
     remove:function(id, to, callback)
@@ -25,7 +25,7 @@ module.exports={
     enqueue:function(db, id, to, callback){
         db.hget(id, 'path', function(err, path){
             console.log('enqueing '+path+' to '+to);
-            cmd(to, {name:'enqueue', args:[path]}, callback);
+            cmd(to, {name:'enqueue', args:[{path:path , id:id}]}, callback);
         });
     },
     seek:function(id, to, callback){

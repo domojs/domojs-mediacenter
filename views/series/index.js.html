@@ -1,17 +1,6 @@
 @!(model)
 <ul id="leftPane" class="col-sm-2 nav nav-tabs nav-stacked">
-    <li><a href="#media/animes">Animes</a></li>
-    <li><a href="#media/movies">Films</a></li>
-    <li><a href="#media/music">Musique</a></li>
-    <li><a href="#media/photo">Photos</a></li>
-    <li class="active"><a href="#media/series">Séries TV</a></li>
-    <li class="player-switch dropdown">
-        <a class="dropdown-toggle" data-toggle="dropdown">
-            <span class="btn-label"></span> <span class="caret"></span>
-        </a>
-        <ul class="dropdown-menu" role="menu">
-        </ul>
-    </li>
+        <li><a href="#media">Dropbox</a></li>
 </ul>
 <div id="mainPane" class="col-sm-10">
     <ul class="nav nav-tabs">
@@ -43,7 +32,17 @@
 
     #thumbnails img
     {
-        height:150px;
+        height:300px;
+    }
+
+    #thumbnails .caption
+    {
+        background-color:rgba(255,255,255,0.5);
+        width:100%;
+        position:absolute;
+        bottom:0;
+        display:none;
+        z-index:2;
     }
 </style>
 
@@ -53,111 +52,4 @@
 <script src="/assets/media/js/player.js"></script>
 
 <script>
-    
-Queue=function(processor, queue)
-{
-    if(this==window)
-        return new Queue(processor, queue);
-    var processing=false;
-    var filePath=queue;
-    filePath=null;
-    queue=this.pending=queue || [];
-    console.log(queue);
-    var self=this;
-    this.enqueue=function(message){
-        console.log(message);
-        queue.push(message);
-        self.save();
-        processQueue();
-    };
-    
-    this.save=function()
-    {
-        if(filePath)
-            $('fs').writeFile(filePath, JSON.stringify(queue), function(err){
-                if(err)
-                    console.log(err);
-            });
-        
-    }
-    
-    var processQueue=this.process=function(){
-        if(processing)
-            return;
-        processing=true;
-        var message=queue.shift();
-        self.current=message;
-        if(!message)
-            return processing=false;
-        processor(message, function(processed){ 
-            if(processed===false)
-            {
-                self.enqueue(message);
-            }
-            self.save(); 
-            processing=false; 
-            if(processed!==false)
-                if(process && process.nextTick)
-                    process.nextTick(processQueue);
-                else
-                    setTimeout(processQueue, 0);
-            
-        });
-    };
-
-    if(queue.length>0)
-        processQueue();
-};
-
-    
-    $.ajax({url:'/api/media/library/video', type:'get', dataType:'json', data:{viewName:'thumbnails', 'search[value]':'series', start:0, length:100}, success:function(data){
-        
-        var coverQueue=new Queue(function(message, next)
-        {
-            $.ajax({url:'/api/media/library/getArt/'+message.id, success:function(cover){
-                    message.img.attr('src', 'data:image;base64,'+cover);
-            }, complete:next})
-        })
-        data=data.data;
-        for(var i in data)
-        {
-            /*if(i%12==0)
-            {
-                var row=$('<div class="container-fluid row"></div>');
-                row.appendTo('#thumbnails');
-            }*/
-            var template=$('<div class="col-sm-4 col-md-2 thumbnail"><img /><div class="caption"><h3></h3></div></div>');
-            template.find('.caption h3').text(data[i].name);
-            if(data[i].cover)
-            {
-                template.find('img').attr('src', 'data:image;base64,'+data[i].cover);
-            }
-            else
-                coverQueue.enqueue({id:data[i].id, img:template.find('img')});
-            template.appendTo('#thumbnails');
-        }
-    }});
-    
-    $('#mainPane .table').dataTable({ajax:function(data, callback, settings){
-        $.ajax({url:'/api/media/library/video', type:'get', dataType:'json', data:{'search[value]':'series'+(data.search.value && ' '+data.search.value || ''), length: isNaN(data.length) && 100 || data.length, start:data.start}, success:function(data){
-            callback(data);
-        }});
-    }, serverSide:true, processing:false, searching:true, lengthChange:false, scrollY: '650px', dom:'frtiS', columns: [
-            { title:"Nom", data: "name" },
-            { title:"Episode", data: "episode", createdCell:function(cell, cellData, rowData){
-                if(rowData.readcount)
-                    $(cell).addClass('read read-'+rowData.readcount);
-            } },
-            { title:"Saison", data: "season" },
-			{ title:"Commandes", data:"id", createdCell:function(cell,cellData,rowData, rowIndex,colIndex){
-				$(cell).empty()
-					.append($('<a class="pull-left btn" title="Lire"><span class="fa fa-play"></span></a>').click(function(){
-						commands.play(cellData);
-					}))
-					.append(' ')
-					.append($('<a class="pull-left btn" title="Ajouter à la liste de lecture"><span class="fa fa-plus"></span></a>').click(function(){
-						commands.enqueue(cellData);
-					}))
-					;
-			}}]});
 </script>
